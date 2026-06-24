@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dagplanning Delmo</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<!-- Firebase via REST API -->
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f7;color:#1d1d1f;font-size:15px}
@@ -426,61 +425,57 @@ const DEFAULT_DB = {
   "Slagerij 't Dorp":{a:"Vrijheidsplein 4, 8930 Menen",c:[]},
 };
 
-// ===== FIREBASE SYNC =====
+// ===== FIREBASE SYNC via REST API =====
 const FIREBASE_URL = "https://delmo-planning2-default-rtdb.europe-west1.firebasedatabase.app";
-const FB_CONFIG = { databaseURL: FIREBASE_URL };
-let fbApp, fbDb, fbConnected = false;
+let fbConnected = false;
+let _pollInterval = null;
 
 function resetFirebase(){
-  if(!fbConnected || !fbDb){
+  if(!fbConnected){
     alert('Geen verbinding met Firebase. Controleer uw internetverbinding.');
     return;
   }
-  const bevestig = confirm('⚠️ Weet u zeker dat u Firebase wilt resetten?\n\nDit wist alle opgeslagen wijzigingen in de cloud (notities, extra klanten, historiek) en laadt de basisgegevens opnieuw.\n\nDruk OK om te bevestigen.');
+  const bevestig = confirm('⚠️ Weet u zeker dat u Firebase wilt resetten?\n\nDit wist alle opgeslagen wijzigingen in de cloud en laadt de basisgegevens opnieuw.\n\nDruk OK om te bevestigen.');
   if(!bevestig) return;
 
   updateSyncStatus('resetten...');
-  // Wis alle Firebase data
-  fbDb.ref('/').remove().then(() => {
-    // Reset lokale opslag ook
-    localStorage.removeItem('sylvie_db');
-    localStorage.removeItem('sylvie_actief');
-    localStorage.removeItem('sylvie_history');
-    localStorage.removeItem('sylvie_temp_notes');
-    // Herlaad DEFAULT_DB naar Firebase
-    DB = JSON.parse(JSON.stringify(DEFAULT_DB));
-    fbSet('db', DB);
-    updateSyncStatus('verbonden');
-    alert('✅ Firebase succesvol gereset! De basisgegevens zijn opnieuw ingeladen.');
-    // Re-render
-    const dateStr = document.getElementById('di').value;
-    if(dateStr) render(dateStr);
-  }).catch(err => {
-    alert('❌ Reset mislukt: ' + err.message);
-    updateSyncStatus('fout bij reset');
-  });
+  // Wis alle Firebase data via DELETE
+  fetch(FIREBASE_URL + '/.json', {method:'DELETE'})
+    .then(() => {
+      localStorage.removeItem('sylvie_db');
+      localStorage.removeItem('sylvie_actief');
+      localStorage.removeItem('sylvie_history');
+      localStorage.removeItem('sylvie_temp_notes');
+      DB = JSON.parse(JSON.stringify(DEFAULT_DB));
+      fbSet('db', DB);
+      updateSyncStatus('verbonden');
+      alert('✅ Firebase succesvol gereset!');
+      const dateStr = document.getElementById('di').value;
+      if(dateStr) render(dateStr);
+    }).catch(err => {
+      alert('❌ Reset mislukt: ' + err.message);
+    });
 }
 
 function initFirebase(){
-  try {
-    fbApp = firebase.initializeApp(FB_CONFIG);
-    fbDb = firebase.database();
-    fbConnected = true;
-    updateSyncStatus('verbinding maken...');
-    // Listen for connection state
-    fbDb.ref('.info/connected').on('value', snap => {
-      if(snap.val()) {
+  updateSyncStatus('verbinding maken...');
+  // Test verbinding via REST
+  fetch(FIREBASE_URL + '/.json?shallow=true')
+    .then(r => {
+      if(r.ok){
+        fbConnected = true;
         updateSyncStatus('verbonden');
         syncFromFirebase();
       } else {
-        updateSyncStatus('offline - lokaal opslaan');
+        fbConnected = false;
+        updateSyncStatus('offline');
       }
+    })
+    .catch(e => {
+      fbConnected = false;
+      updateSyncStatus('offline');
+      console.error('Firebase init fout:', e);
     });
-  } catch(e) {
-    console.error('Firebase init fout:', e);
-    fbConnected = false;
-    updateSyncStatus('offline');
-  }
 }
 
 function updateSyncStatus(msg){
@@ -493,71 +488,73 @@ function updateSyncStatus(msg){
 }
 
 function fbSet(path, data){
-  if(!fbConnected || !fbDb) return;
-  try { fbDb.ref(path).set(data); } catch(e) { console.error('Firebase set fout:', e); }
+  if(!fbConnected) return;
+  fetch(FIREBASE_URL + '/' + path + '.json', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).catch(e => console.error('Firebase set fout:', e));
 }
 
 function fbGet(path, callback){
-  if(!fbConnected || !fbDb) { callback(null); return; }
-  try { fbDb.ref(path).once('value').then(s => callback(s.val())).catch(() => callback(null)); } catch(e) { callback(null); }
+  if(!fbConnected){ callback(null); return; }
+  fetch(FIREBASE_URL + '/' + path + '.json')
+    .then(r => r.json())
+    .then(data => callback(data))
+    .catch(() => callback(null));
 }
 
 function syncFromFirebase(){
-  // Real-time listener voor DB
-  fbDb.ref('db').on('value', snap => {
-    const data = snap.val();
-    if(data){ DB = Object.assign({}, DEFAULT_DB, data); }
-  });
-
-  // Real-time listener voor actieve klanten
-  fbDb.ref('actief').on('value', snap => {
-    const data = snap.val();
-    if(data) localStorage.setItem('sylvie_actief', JSON.stringify(data));
-  });
-
-  // Real-time listener voor wisselende klanten (nieuw toegevoegde klanten)
-  fbDb.ref('wisselend').on('value', snap => {
-    const data = snap.val();
-    if(data){
-      // Merge Firebase wisselend met lokale WISSELEND
-      Object.keys(data).forEach(dag => {
-        if(!WISSELEND[dag]) WISSELEND[dag] = [];
-        data[dag].forEach(naam => {
-          if(!WISSELEND[dag].includes(naam)) WISSELEND[dag].push(naam);
+  // Laad alle data van Firebase via REST
+  fetch(FIREBASE_URL + '/.json')
+    .then(r => r.json())
+    .then(data => {
+      if(!data) return;
+      if(data.db) DB = Object.assign({}, DEFAULT_DB, data.db);
+      if(data.actief) localStorage.setItem('sylvie_actief', JSON.stringify(data.actief));
+      if(data.temp_notes) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data.temp_notes));
+      if(data.wisselend){
+        Object.keys(data.wisselend).forEach(dag => {
+          if(!WISSELEND[dag]) WISSELEND[dag] = [];
+          data.wisselend[dag].forEach(naam => {
+            if(!WISSELEND[dag].includes(naam)) WISSELEND[dag].push(naam);
+          });
         });
-      });
-    }
-  });
-
-  // Real-time listener voor historiek - gedeeld tussen alle toestellen
-  fbDb.ref('history').on('value', snap => {
-    const data = snap.val();
-    if(data){
-      // Merge Firebase history met lokale history (neem meest recente)
-      try {
-        const localHistory = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-        const merged = Object.assign({}, data, localHistory);
-        localStorage.setItem('sylvie_history', JSON.stringify(merged));
-      } catch(e) {
-        localStorage.setItem('sylvie_history', JSON.stringify(data));
+      }
+      if(data.history){
+        try {
+          const localHistory = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+          const merged = Object.assign({}, data.history, localHistory);
+          localStorage.setItem('sylvie_history', JSON.stringify(merged));
+        } catch(e) {
+          localStorage.setItem('sylvie_history', JSON.stringify(data.history));
+        }
       }
       updateSyncStatus('verbonden');
-    }
-  });
+      const dateStr = document.getElementById('di').value;
+      if(dateStr) render(dateStr);
+    }).catch(e => {
+      console.error('Firebase sync fout:', e);
+      updateSyncStatus('offline');
+    });
 
-  // Real-time listener voor temp notes
-  fbDb.ref('temp_notes').on('value', snap => {
-    const data = snap.val();
-    if(data) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data));
-  });
-
-  // Initieel laden en re-render
-  fbDb.ref('history').once('value', snap => {
-    const data = snap.val();
-    if(data) localStorage.setItem('sylvie_history', JSON.stringify(data));
-    const dateStr = document.getElementById('di').value;
-    if(dateStr) render(dateStr);
-  });
+  // Poll elke 30 seconden voor updates van andere toestellen
+  if(_pollInterval) clearInterval(_pollInterval);
+  _pollInterval = setInterval(() => {
+    fetch(FIREBASE_URL + '/history.json')
+      .then(r => r.json())
+      .then(data => {
+        if(data){
+          const localHistory = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+          const merged = Object.assign({}, data, localHistory);
+          localStorage.setItem('sylvie_history', JSON.stringify(merged));
+        }
+      }).catch(() => {});
+    fetch(FIREBASE_URL + '/db.json')
+      .then(r => r.json())
+      .then(data => { if(data) DB = Object.assign({}, DEFAULT_DB, data); })
+      .catch(() => {});
+  }, 30000);
 }
 
 // Override saveDB to also save to Firebase
@@ -579,9 +576,9 @@ function fbSaveHistory(){
   _histSaveTimeout = setTimeout(() => {
     try {
       const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-      fbSet('history', h);
+      if(fbConnected) fbSet('history', h);
     } catch(e) {}
-  }, 500); // debounce 0.5s
+  }, 500);
 }
 
 function fbSaveTempNotes(){
