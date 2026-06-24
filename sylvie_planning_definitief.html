@@ -445,7 +445,6 @@ const DEFAULT_DB = {
 // ===== SYNC SYSTEEM =====
 let fbConnected = false;
 // noop3 verwijderd
-function fbGet(path, cb){ cb(null); }
 
 
 
@@ -458,20 +457,7 @@ function updateSyncStatus(msg){ const el=document.getElementById("syncStatus"); 
 
 
 
-// Override saveDB to also save to Firebase
-const _origSaveDB = function(){
-  try{ localStorage.setItem('sylvie_db', JSON.stringify(DB)); }catch(e){}
-  fbSet('db', DB);
-};
-
-// Override saveActieveKlanten
-const _origSaveActief = function(data){
-  try{ localStorage.setItem('sylvie_actief', JSON.stringify(data)); }catch(e){}
-  fbSet('actief', data);
-};
-
-// Override saveHistoriek later (after it's defined)
-// fbSaveHistory verwijderd
+// Oude Firebase overrides verwijderd
 
 
 
