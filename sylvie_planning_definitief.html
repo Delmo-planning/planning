@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dagplanning Delmo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f7;color:#1d1d1f;font-size:15px}
+a{color:inherit;text-decoration:none}
+.header{background:#fff;padding:1rem 1rem 0.6rem;border-bottom:1px solid #e0e0e0;position:sticky;top:0;z-index:10}
+.header h1{font-size:19px;font-weight:600;margin-bottom:0.6rem}
+.header input[type=date]{width:100%;padding:7px 10px;font-size:15px;border:1px solid #ccc;border-radius:10px;background:#f5f5f7}
+.dag-label{font-size:17px;font-weight:600;color:#1d1d1f;margin-top:6px;min-height:22px;letter-spacing:0.01em}
+.btn-bar{display:flex;gap:7px;padding:0.65rem 1rem 0.2rem;flex-wrap:wrap}
+.btn{padding:6px 13px;font-size:13px;border-radius:9px;border:1px solid #ccc;background:#f5f5f7;color:#1d1d1f;cursor:pointer;white-space:nowrap}
+.btn.primary{background:#0071e3;border-color:#0071e3;color:#fff;font-weight:500}
+.btn.green{background:#34c759;border-color:#34c759;color:#fff;font-weight:500}
+.countbadge{font-size:12px;color:#666;padding:0.4rem 1rem 0.2rem}
+.card{background:#fff;border:1px solid #e0e0e0;border-radius:11px;padding:0.65rem 0.85rem;margin:0.4rem 1rem}
+.card.depot{background:#f5f5f7;border-color:#ccc}
+.card.extra{border-color:#0071e3;background:#f0f7ff}
+.cname{font-size:14px;font-weight:600;margin-bottom:2px}
+.caddr{font-size:12px;color:#555;margin-bottom:3px}
+.cnote{font-size:11px;color:#0071e3;background:#e8f0fe;padding:2px 7px;border-radius:5px;margin-bottom:3px;display:inline-block}
+.ccontact{font-size:12px;color:#555;margin:1px 0}
+.cheader{display:flex;align-items:center;margin-bottom:2px;flex-wrap:wrap;gap:4px}
+.num{width:20px;height:20px;border-radius:50%;background:#e5e5ea;border:1px solid #ccc;font-size:10px;font-weight:600;text-align:center;line-height:20px;color:#555;margin-right:7px;flex-shrink:0}
+.card-actions{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+.move-btn{padding:4px 10px;font-size:13px;border:1px solid #ccc;border-radius:7px;background:#f5f5f7;cursor:pointer;font-weight:600;color:#555;min-width:34px}.move-btn:active{background:#e0e0e0}
+.edit-btn{padding:4px 10px;font-size:11px;border:1px solid #ff9500;border-radius:7px;background:transparent;color:#ff9500;cursor:pointer}
+.del-btn{padding:4px 10px;font-size:11px;border:1px solid #ff3b30;border-radius:7px;background:transparent;color:#ff3b30;cursor:pointer}
+.skip-btn{padding:4px 10px;font-size:11px;border:1px solid #ff9500;border-radius:7px;background:transparent;color:#ff9500;cursor:pointer}
+.card.skipped{opacity:0.4;border-style:dashed;background:#fff8f8}
+.skip-label{font-size:9px;font-weight:700;color:#ff3b30;text-transform:uppercase;letter-spacing:0.05em;margin-left:6px}
+.extra-label{font-size:9px;font-weight:700;color:#0071e3;text-transform:uppercase;letter-spacing:0.05em}
+.actief-label{font-size:9px;font-weight:700;color:#ff9500;text-transform:uppercase;letter-spacing:0.05em;margin-left:6px}
+.cnote-perm{font-size:12px;color:#1a6b1a;background:#e6f4e6;padding:3px 8px;border-radius:5px;margin-bottom:3px;display:inline-block}
+.cnote-temp{font-size:12px;color:#8b4500;background:#fff3e0;padding:3px 8px;border-radius:5px;margin-bottom:3px;display:inline-block}
+.note-btn{padding:4px 10px;font-size:11px;border:1px solid #34c759;border-radius:7px;background:transparent;color:#34c759;cursor:pointer}
+.pos-label{font-size:10px;color:#34c759;font-weight:500}
+.arrow{text-align:center;color:#bbb;font-size:11px;padding:1px 0 1px 1rem}
+.empty{padding:2rem 1rem;text-align:center;color:#888;font-size:14px}
+.wissel-titel{font-size:11px;color:#888;padding:0.6rem 1rem 0.2rem;border-top:1px solid #e0e0e0;margin-top:0.4rem;text-transform:uppercase;letter-spacing:0.04em}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;align-items:flex-end;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:16px 16px 0 0;padding:1.25rem 1rem 2.5rem;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:16px;font-weight:600;margin-bottom:0.85rem}
+.modal label{display:block;font-size:11px;color:#888;margin:0.7rem 0 3px;text-transform:uppercase;letter-spacing:0.04em}
+.modal input,.modal select{width:100%;padding:8px 11px;font-size:14px;border:1px solid #ccc;border-radius:9px;background:#f5f5f7;color:#1d1d1f;font-family:inherit}
+.suggestion-box{background:#e8f0fe;border:1px solid #0071e3;border-radius:9px;padding:8px 11px;font-size:13px;color:#0071e3;margin-top:6px;display:none}
+.modal-btns{display:flex;gap:8px;margin-top:1.25rem}
+.modal-btns button{flex:1;padding:11px;font-size:14px;border-radius:9px;border:1px solid #ccc;cursor:pointer;font-weight:500}
+.modal-btns button.ok{background:#0071e3;border-color:#0071e3;color:#fff}
+.modal-btns button.cancel{background:#f5f5f7;color:#555}
+.contact-row{display:flex;gap:6px;align-items:center;margin-bottom:5px}
+.contact-row input{flex:1}
+.contact-row button{padding:6px 10px;font-size:12px;border:1px solid #ff3b30;border-radius:7px;background:transparent;color:#ff3b30;cursor:pointer}
+.add-contact-btn{font-size:12px;color:#0071e3;background:none;border:none;cursor:pointer;padding:2px 0;margin-bottom:6px}
+.btn.hist{background:#5856d6;border-color:#5856d6;color:#fff;font-weight:500}
+.btn.export{background:#34c759;border-color:#34c759;color:#fff;font-weight:500}
+.btn.reset{background:#ff3b30;border-color:#ff3b30;color:#fff;font-weight:500}
+.hist-item{padding:0.6rem 1rem;border-bottom:0.5px solid #e0e0e0;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.hist-item:hover{background:#f5f5f7}
+.hist-item .hist-datum{font-size:14px;font-weight:500}
+.hist-item .hist-meta{font-size:12px;color:#888}
+.hist-detail-card{background:#fff;border:1px solid #e0e0e0;border-radius:9px;padding:0.5rem 0.75rem;margin:0.3rem 1rem;page-break-inside:avoid}
+.hist-detail-card .cname{font-size:13px;font-weight:600}
+.hist-detail-card .caddr{font-size:11px;color:#555}
+.hist-detail-card .ccontact{font-size:11px;color:#555}
+.hist-detail-card .cnote{font-size:10px}
+.hist-detail-card.geannuleerd{opacity:0.4;text-decoration:line-through}
+.hist-detail-card.extra{border-left:3px solid #0071e3}
+.print-only{display:none}
+@media print{.print-only{display:block}.no-print{display:none!important}}
+@page{margin:10mm 12mm;size:A4 portrait}
+@media print {
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff;font-size:10pt;margin:0;padding:0}
+  .header,.btn-bar,.no-print,.modal-bg,.arrow,.wissel-titel{display:none!important}
+  .print-header{display:block!important;margin-bottom:8pt}
+  .print-header{display:block!important;margin-bottom:5pt}
+  #printTitle{font-size:14pt;font-weight:700}
+  #printSub{font-size:9pt;color:#444;border-bottom:0.5pt solid #999;padding-bottom:3pt;margin-bottom:4pt}
+  .countbadge{font-size:8pt;padding:1pt 0 3pt;font-weight:600;color:#333}
+  /* Één kaart per rij, kolom-layout binnen elke kaart */
+  #cardList{display:block}
+  .card{border:0;border-bottom:0.5pt solid #ddd;border-radius:0;margin:0;padding:2pt 0;page-break-inside:avoid;break-inside:avoid;display:grid;grid-template-columns:14pt 1.8fr 1fr 1fr;gap:0 5pt;align-items:start}
+  .card.depot{background:#f0f0f0!important;padding:3pt 4pt;grid-template-columns:22pt 1fr;border:0.5pt solid #ccc;margin-bottom:2pt}
+  .card.extra{border-left:2pt solid #0071e3!important}
+  .card.skipped{opacity:0.3;text-decoration:line-through}
+  /* Kolom 1: nummer */
+  .num{width:14pt;height:14pt;line-height:14pt;font-size:7pt;margin:0;grid-column:1;align-self:center}
+  /* Kolom 2: naam + adres */
+  .card-col-main{grid-column:2;display:flex;flex-direction:column}
+  .cname{font-size:10.5pt;font-weight:700;margin-bottom:0}
+  .caddr{font-size:10pt;color:#333;margin:0}
+  /* Kolom 3: telefoon */
+  .card-col-tel{grid-column:3;font-size:9.5pt;color:#333;word-break:break-word;line-height:1.3}
+  /* Kolom 4: notitie */
+  .card-col-note{grid-column:4;font-size:9.5pt;color:#0050aa;font-style:italic;word-break:break-word;line-height:1.3}
+  /* Verberg originele elementen, tonen via kolommen */
+  .cheader{display:none}
+  .ccontact{display:none}
+  .cnote{display:none}
+  .card-actions,.edit-btn,.del-btn,.skip-btn,.move-btn,.extra-label,.pos-label,.skip-label{display:none!important}
+}
+.print-header{display:none}
+</style>
+</head>
+<body>
+<!-- Print header - alleen zichtbaar bij afdrukken -->
+<div class="print-header" id="printHeader">
+  <div id="printTitle" style="font-size:14pt;font-weight:700;color:#1E4D8C">Dagplanning Delmo</div>
+  <div id="printSub" style="font-size:13pt;font-weight:600;color:#1d1d1f;border-bottom:1pt solid #1E4D8C;padding-bottom:4pt;margin-bottom:6pt"></div>
+  <div id="printCount" style="font-size:10pt;color:#555;margin-bottom:4pt"></div>
+</div>
+
+<div class="header">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+  <h1 style="margin:0;font-size:19px;font-weight:600">🚐 Dagplanning Delmo</h1>
+  <span id="syncStatus" style="font-size:11px;color:#ff9500">🟡 laden...</span>
+</div>
+  <input type="date" id="di">
+  <div class="dag-label" id="dl"></div>
+</div>
+<div id="out"></div>
+<!-- Modal: notitie toevoegen -->
+<div class="modal-bg" id="modalNote">
+  <div class="modal">
+    <h2>📝 Notitie toevoegen</h2>
+    <div id="noteKlantNaam" style="font-size:15px;font-weight:600;color:#1E4D8C;margin-bottom:0.75rem"></div>
+    <label>📌 Permanente notitie <span style="font-size:11px;color:#888">(altijd zichtbaar)</span></label>
+    <input type="text" id="nPerm" placeholder="bv. altijd bellen voor aankomst">
+    <label style="margin-top:0.75rem">⏰ Tijdelijke notitie <span style="font-size:11px;color:#888">(enkel vandaag)</span></label>
+    <input type="text" id="nTemp" placeholder="bv. ophalen pallet deze week">
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeModal('modalNote')">Annuleren</button>
+      <button class="ok" onclick="saveNote()">Opslaan ✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: historiek -->
+<div class="modal-bg" id="modalHist">
+  <div class="modal" style="padding-bottom:1.5rem">
+    <h2>📋 Historiek</h2>
+    <div id="histContent" style="margin-top:0.75rem"></div>
+    <div class="modal-btns" style="margin-top:1rem">
+      <button class="ok" style="background:#34c759;border-color:#34c759" onclick="exportHistoriek()">💾 Exporteer naar Excel</button>
+      <button class="cancel" onclick="closeModal('modalHist')">Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalAdd">
+  <div class="modal">
+    <h2>Klant toevoegen aan rit</h2>
+    <label>Naam klant</label>
+    <input type="text" id="mNaam" placeholder="Naam van de klant">
+    <label>Adres</label>
+    <input type="text" id="mAdres" placeholder="Straat, gemeente">
+    <label>Notitie / code (optioneel)</label>
+    <input type="text" id="mNote" placeholder="bv. code: 1234">
+    <label>Telefoonnummer(s)</label>
+    <div id="mTelList"></div>
+    <button class="add-contact-btn" onclick="addTelField('mTelList')">+ Telefoonnummer toevoegen</button>
+    <label>Positie in de rit</label>
+    <div class="suggestion-box" id="suggestionBox"></div>
+    <select id="mPos"></select>
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeModal('modalAdd')">Annuleren</button>
+      <button class="ok" onclick="addKlant()">Toevoegen ✓</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalEdit">
+  <div class="modal">
+    <h2>Klantgegevens aanpassen</h2>
+    <label>Naam</label><input type="text" id="eNaam">
+    <label>Adres</label><input type="text" id="eAdres">
+    <label>Notitie / code</label><input type="text" id="eNote">
+    <label>Telefoonnummer(s)</label>
+    <div id="eTelList"></div>
+    <button class="add-contact-btn" onclick="addTelField('eTelList')">+ Telefoonnummer toevoegen</button>
+    <div style="margin-top:0.75rem;padding:0.6rem;background:#fff8e6;border-radius:8px;border:1px solid #ff9500">
+      <div style="font-size:12px;color:#cc7000;font-weight:600">💾 Wijzigingen worden opgeslagen in de browser</div>
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeModal('modalEdit')">Annuleren</button>
+      <button class="ok" onclick="saveEdit()">Opslaan ✓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Vaste geografische posities per wisselende klant per route
+// Waarde = naam van stop NA wie ingevoegd wordt, null = vooraan
+const POSITIONS = {
+  'Amando':              { maandag_oneven: 'Vlevy', maandag_even: 'Vlevy' },
+  'Breughel Food':       { maandag_oneven: 'Q-Food', maandag_even: 'Q-Food' },
+  'Signature foods Belgium': { maandag_oneven: 'Beltaste', maandag_even: 'Beltaste' },
+  'Van Bogaert bvba':    { maandag_oneven: 'Bauwens', maandag_even: 'Bauwens' },
+  'Verstraete':          { dinsdag_oneven: 'Slachthuis De Coster', dinsdag_even: 'Slachthuis De Coster' },
+  'Slachthuis De Coster':{ dinsdag_oneven: null, dinsdag_even: null },
+  'Bernard Stevens':     { dinsdag_oneven: 'Dujardin', dinsdag_even: 'Dujardin' },
+  'Den Huilaert':        { dinsdag_oneven: 'Bernard Stevens', dinsdag_even: 'Bernard Stevens' },
+  'Vannieuwenhuyze':     { dinsdag_oneven: 'Den Huilaert', dinsdag_even: 'Den Huilaert' },
+  'Spegelaere':          { dinsdag_oneven: 'Vannieuwenhuyze', dinsdag_even: 'Laeremans' },
+  'Hotelschool ter Duinen':{ dinsdag_oneven: 'De Keyzer Ossaer', dinsdag_even: 'Schoenmaker laurens' },
+  'Dujardin':            { dinsdag_oneven: 'Veos', dinsdag_even: 'Veos' },
+  'AZ WEST':             { dinsdag_oneven: 'Delvan', dinsdag_even: 'Delvan' },
+  'Mahu Meat':           { dinsdag_oneven: 'Laeremans', dinsdag_even: 'Laeremans' },
+  'Limousin':            { dinsdag_oneven: 'De Keyzer Ossaer', dinsdag_even: 'De Keyzer Ossaer' },
+  'Hanssens Oostende':   { dinsdag_oneven: 'Laeremans', dinsdag_even: 'Laeremans' },
+  'Delavi Nv':           { woensdag_a: 'Polca' },
+  'Polca':               { woensdag_a: 'Bert Maes' },
+  'Crombez':             { woensdag_a: 'Hanssens Catering' },
+  'Roussel Onions':      { woensdag_a: 'Crombez' },
+  'Export Tielt':        { woensdag_a: 'Delavi Nv' },
+  'Slachthuis De Coster_wa': { woensdag_a: 'Export Tielt' },
+  'D&D Aalter':          { woensdag_a: 'Slachthuis De Coster_wa' },
+  'Vleeswaren Hava':     { woensdag_a: 'Koen en Veerle bvba' },
+  'Chicken Masters':    { woensdag_a: null },  // Om de 2 weken (anker week 21 = 20 mei)
+  "Slagerij 't Dorp":    { woensdag_a: 'Roussel Onions' },
+  'Slagerij Robby en Angelique': { woensdag_a: 'Chicken Masters' },
+  'Culinaire Slagerij':  { woensdag_a: 'Slagerij Robby en Angelique' },
+  'Hanssens Catering':   { woensdag_a: 'Calibra' },
+  'Calibra':             { woensdag_a: 'Volys' },
+  'Beenhouwer Decupere': { woensdag_a: 'Covameat' },
+  'Dejaeghere':          { woensdag_a: 'Covameat' },
+  'Pasfrost':            { woensdag_a: 'Dejaeghere' },
+  'Westfro':             { woensdag_a: 'Agrifreez' },
+  'Agrifreez':           { woensdag_a: 'Greenyard Foods' },
+  'Seracraft':           { woensdag_a: 'Lavameat' },
+  'Koen en Veerle bvba': { woensdag_a: 'Lavameat' },
+  "D'Arta":              { woensdag_a: 'Vleeswaren Hava' },
+  'Bert Maes':           { woensdag_a: "D'Arta" },
+  'Markey':              { woensdag_a: 'Covameat' },
+  'Detremmerie':         { woensdag_b_even: null, woensdag_b_oneven: null },
+  'Euromeat':            { woensdag_b_even: 'Vlevia', woensdag_b_oneven: 'Vlevia' },
+  'Campens':             { woensdag_b_even: 'Ecoclavis', woensdag_b_oneven: 'Plukon' },
+  'Hoca meat':           { woensdag_b_even: 'Ecoclavis', woensdag_b_oneven: 'Plukon' },
+  'Jambo-Ra':            { woensdag_b_even: 'Hoca meat', woensdag_b_oneven: 'Hoca meat' },
+  'Basic Business':      { woensdag_b_even: 'Jambo-Ra', woensdag_b_oneven: 'Plukon' },
+  'Bens Retail':         { woensdag_b_even: 'Jambo-Ra', woensdag_b_oneven: 'Plukon' },
+  'Vleeswaren Duca':     { woensdag_b_even: 'Hostijn', woensdag_b_oneven: 'Plukon' },
+  'Ecoclavis':           { woensdag_b_even: 'Vleeswaren Duca', woensdag_b_oneven: 'Vleeswaren Duca' },
+  'Breydel':             { woensdag_b_even: 'Bens Retail', woensdag_b_oneven: 'Campens' },
+  'Proxes':              { woensdag_b_even: 'De Wulf Gavere', woensdag_b_oneven: 'De Wulf Gavere' },
+  'Vanoverbeke':         { woensdag_b_even: 'Proxes', woensdag_b_oneven: 'Proxes' },
+  'Slagerij Dewa':       { woensdag_b_even: 'Ecoclavis', woensdag_b_oneven: 'Plukon' },
+  'Tops Foods':          { donderdag_oneven: 'Bruynkens', donderdag_even: 'Bruynkens' },
+  'Buvens':              { donderdag_oneven: 'Marmo', donderdag_even: 'Marmo' },
+  'Goldmeat':            { donderdag_oneven: 'Ropa', donderdag_even: 'Ropa' },
+  'Halal':               { donderdag_oneven: 'Goldmeat', donderdag_even: 'Ropa' },
+  'Legon':               { donderdag_oneven: "D'Argifral", donderdag_even: "D'Argifral" },
+  'Marcotty':            { donderdag_oneven: 'Legon', donderdag_even: 'Legon' },
+  'BKS':                 { donderdag_oneven: 'Detry', donderdag_even: 'Detry' },
+  'Goeminne Slagerij':   { vrijdag_oneven: null, vrijdag_even: null },
+  'Transmeat':           { vrijdag_oneven: 'Menken', vrijdag_even: 'Menken' },
+  'Sanpareil':           { vrijdag_oneven: 'Transmeat', vrijdag_even: 'Transmeat' },
+  'Ceulemans':           { vrijdag_oneven: 'Sanpareil', vrijdag_even: 'Sanpareil' },
+  'Agape':               { vrijdag_oneven: 'Luka', vrijdag_even: 'Luka' },
+  'Straetmans':          { vrijdag_oneven: 'Viangros', vrijdag_even: 'Viangros' },
+  'Bevica':              { vrijdag_oneven: 'Goeminne Slagerij', vrijdag_even: 'Goeminne Slagerij' },
+  'Alero Topdog':        { vrijdag_oneven: 'Melior', vrijdag_even: 'Melior' },
+  'Chantal Laevens':     { vrijdag_oneven: 'Melior', vrijdag_even: 'Melior' },
+  'Intersalami':         { vrijdag_oneven: 'Melior', vrijdag_even: 'Melior' },
+};
+
+function getSuggestedPos(naam, routeKey, klanten) {
+  const pos = POSITIONS[naam];
+  if (!pos) return null;
+  const afterStop = pos[routeKey];
+  if (afterStop === undefined) return null;
+  if (afterStop === null) return 0;
+  const idx = klanten.findIndex(k => k.n === afterStop);
+  if (idx === -1) return null;
+  return idx + 1;
+}
+
+const DEFAULT_DB = {
+  "Vlevy":{a:"Korte Mate 3, 9000 Gent",c:["Steven: 09 326 94 77","Jan: 09 218 80 89","Ian: 04 720 64 480"]},
+  "Velda":{a:"Lokerenbaan 131, 9240 Zele",c:["Luc Van Damme: +32 475 30 17 38"]},
+  "Bauwens":{a:"Heikensstraat 5, 9240 Zele",c:["052 45 76 76"]},
+  "Q-Food":{a:"Moortelstraat 21B, 9160 Lokeren",c:["Timothy intern: 09 340 97 32","Timothy extern: 0471 25 82 12"]},
+  "Breughel Food":{a:"Waaslandlaan 18, 9160 Lokeren",c:["Jan Dereu: 09 349 15 50"]},
+  "Thierens":{a:"Eurolaan 8, 9140 Temse",c:[]},
+  "Ernell":{a:"Eurolaan 12, 9140 Temse",c:[]},
+  "Eurokip":{a:"Eurolaan 15, 9140 Temse",c:[],nt:"Slijpwerk onder de toonbank"},
+  "De Cock / Casadoro":{a:"Industriepark 14, 9100 Sint-Niklaas",c:["Antoon De Coninck: +32 37 60 12 50"]},
+  "Hemelaer":{a:"Haagdam 2A, 9140 Temse",c:["+32 495 64 65 07"]},
+  "Beltaste":{a:"Lozenweg 30, 3930 Hamont-Achel",c:["Sander Meelberghs: +32 11 44 04 60"],nt:"POORT 17"},
+  "Vleeshandel De Brandt":{a:"Eikstraat 6, 9080 Lochristi",c:[]},
+  "Amando":{a:"Houtstraat 50, 9070 Destelbergen",c:[],nt:"Leveren achteraan (Schaessestraat 7/9)"},
+  "Signature foods Belgium":{a:"Steenweg op Tielen, 2300 Turnhout",c:["Kevin Smolders: +32 14 42 61 11"]},
+  "Van Bogaert bvba":{a:"Lokeren",c:[]},
+  "Veos":{a:"Akkerstraat 4/A, 8750 Wingene",c:["Voor 7u30: 0466 20 09 46"],nt:"Toegang poort: 0033 7000037467101"},
+  "Bernard Stevens":{a:"Leysaforststraat 20 A, 8880 Lichtervelde",c:[],nt:"Na Veos en Dujardin — Voor Den Huilaert, Vannieuwenhuyze, t houtlandt en De Keyzer Ossaer"},
+  "Den Huilaert":{a:"Amersveldestraat 94, 8610 Kortemark",c:["+32 515 670 38"],nt:"Na Bernard Stevens — Voor Vannieuwenhuyze en t houtlandt"},
+  "t houtlandt":{a:"Atlasstraat 9, 8610 Koekelare",c:["+32 51 58 25 44"]},
+  "De Keyzer Ossaer":{a:"Barnestraat 1, 8680 Koekelare",c:["Hilde/Bjorn: 051 59 10 59"]},
+  "Schoenmaker laurens":{a:"Noordstraat 33, 8630 Veurne",c:["058 31 39 08"]},
+  "AZ WEST":{a:"Rectorlaan 5, 8630 Veurne",c:[]},
+  "Delvan":{a:"Albert I laan 17, 8630 Veurne",c:["058 31 37 37"]},
+  "De Beauvoorder":{a:"Albert I laan 54, 8630 Veurne",c:[]},
+  "Dierendonck":{a:"Albert I laan 70, 8630 Veurne",c:["Milan Temmerman: 058 60 40 00"]},
+  "Vlaemynck":{a:"Duvenkot 6, 8630 Veurne",c:[]},
+  "Laeremans":{a:"Abdijstraat 3, 8470 Gistel",c:["Charles Goemaere: 0471 46 33 28"]},
+  "Cube":{a:"Lieverstedestraat 12, 8020 Oostkamp",c:[]},
+  "Mahu Meat":{a:"Leopold I-laan 98, 8000 Brugge",c:["Bart Maertens"],nt:"Voor Cube — op oneven weken dinsdag"},
+  "Van Landschoot G. & Zn. NV":{a:"Prins Boudewijnlaan 22, 9991 Maldegem",c:["Lukas: 050 71 16 27"]},
+  "Meco":{a:"Leegaardsdijk 2, 8400 Oostende",c:["Davy: 0477 25 93 77"],nt:"Code poort: 8400#"},
+  "FAG":{a:"Plantijnstraat 8, 8400 Oostende",c:["Jonas Ghesquière: 059 80 70 60"]},
+  "Hanssens Oostende":{a:"Heerweg 11, 8400 Oostende",c:[]},
+  "Limousin":{a:"Schorestraat 61, 8433 Schore",c:["Philippe: 051 55 55 41"],nt:"Om de 2 weken — volgende: week 27 (30 juni), week 29, week 31..."},
+  "Vannieuwenhuyze":{a:"Essenstraat 22A, 8710 Zarren",c:["Jurgen"],nt:"Elke 3 weken — Na Den Huilaert — Voor t houtlandt en De Keyzer Ossaer"},
+  "Hotelschool ter Duinen":{a:"Witte Burg 8, 8630 Veurne",c:[]},
+  "Dujardin":{a:"Zwevezeelestraat 142, 8851 Koolskamp",c:[],nt:"Na Veos — Voor Bernard Stevens, Den Huilaert en t houtlandt"},
+  "Slachthuis De Coster":{a:"Bruggestraat 140, 8755 Ruiselede",c:["Dehem Sharon: +32 51 68 80 78"]},
+  "Bamatec":{a:"De Bosmier 13, 8710 Wielsbeke",c:[]},
+  "Dobbels":{a:"Izegemstraat 58-64, 8770 Ingelmunster",c:["+32 51 33 10 40"]},
+  "Volys":{a:"Oudstrijderslaan 11, 8860 Lendelede",c:["Amina Deven: +32 51 33 50 43"],nt:"Badge: 8888"},
+  "Covameat":{a:"Komenstraat 73, 8953 Heuvelland",c:["Chantal Room: +32 51 78 84 00"]},
+  "Markey":{a:"Klerkenstraat 139b, 8920 Langemark-Poelkapelle",c:[],nt:"Grijs bakje"},
+  "Colli service":{a:"Westvlees, Ommegang West 9, 8840 Staden",c:["107 – Jacob: 0495 29 88 86","107 – Casper: 0498 16 83 37","111 – Jonas of Birger (niet Yves)","103 – Karel: 0491/05 75 62 (15 min op voorhand bellen)","103 – 0499/64 54 20","103 – Ronny Peirs: 0473/89 78 38","103 – Davy Buysse: 0499/51 66 90","103 – 0499/69 42 91"],nt:"Nancy Cardon: 0497/415430"},
+  "Greenyard Foods":{a:"Romenstraat 2, 8840 Staden",c:["David Dewulf: 051 78 82 00"],nt:"Fluo hesje aandoen"},
+  "t spoor":{a:"Zandputstraat 17, 8930 Menen",c:[]},
+  "Noyez":{a:"Menensesteenweg 232, 8940 Wervik",c:["Joris: +32 56 31 14 54"]},
+  "Hofkip":{a:"Industrielaan 31, 8930 Menen",c:["Steven Deleye: +32 56 52 14 21"]},
+  "Lavameat":{a:"Diksmuidestraat 154, 8840 Staden",c:[]},
+  "Serge":{a:"Kortrijkstraat 116, 8700 Tielt",c:[]},
+  "Goodmeat":{a:"Venecolaan 28, 9880 Aalter",c:["Lindsey Ryckaert: +32 22 45 46 47"]},
+  "M&M slijpwerk (poort 10)":{a:"Meat & More, Groendreef 10, 9880 Aalter",c:["Danny De Clerck: 09 216 42 28"],nt:"Slijpwerk — poort 10"},
+  "M&M afdeling 22":{a:"Meat & More, Groendreef 22, 9880 Aalter",c:["Danny De Clerck: 09 216 42 28"],nt:"Afleveradres afdeling 22"},
+  "M&M afdeling 71":{a:"Meat & More, Groendreef 71, 9880 Aalter",c:["Danny De Clerck: 09 216 42 28"],nt:"Afleveradres afdeling 71"},
+  "M&M afdeling 83":{a:"Meat & More, Groendreef 83, 9880 Aalter",c:["Danny De Clerck: 09 216 42 28"],nt:"Naast deur 5, trap omhoog en bellen"},
+  "Chicken Masters":{a:"Kortrijksesteenweg 244, 9800 Deinze",c:["Jan Cobaut: +32 9 381 54 86","Ruslan: +32 489 26 52 11"],nt:"Om de 2 weken — Code deur: 4242 — volgende: week 21 (20 mei), week 23, week 25..."},
+  "Delavi Nv":{a:"Tenhovestraat 10, 8700 Tielt",c:[],nt:"Na D'Arta (via Bert Maes en Polca) — Ophalen"},
+  "Vleeswaren Hava":{a:"Zwaaikomstraat 70, 8800 Roeselare",c:[],nt:"Na Lavameat: Hava → D'Arta → Bert Maes → Polca → Delavi"},
+  "Vandenbogaerde":{a:"Lar 32, 8930 Menen",c:["David Pollet: +32(92)534957"]},
+  "Debaenst":{a:"Blauwe Ras van Belgiëstraat 11, 7700 Moeskroen",c:["Jurgen Vandenabeele: 056 48 18 40"]},
+  "Vlevia":{a:"Slachthuisstraat 44, 7700 Moeskroen",c:["Jean-Michel Blancquart: 0477 99 05 61"],nt:"Code: 2040B"},
+  "Dicogel":{a:"Rue de la Bassée 3, 7700 Moeskroen",c:[]},
+  "Plukon":{a:"Avenue De L'Eau Vive 5, 7700 Moeskroen",c:["Angelo Bruyneel: +32 56 85 59 00"],nt:"Slijpwerk p.10 / pallet p.9 / nieuwe messen p.7"},
+  "Hostijn":{a:"Avenue Patrick Wagnon 1, 7700 Moeskroen",c:[]},
+  "Vleeswaren Duca":{a:"Boulevard du Champ d'Aviation 50 B, 7712 Moeskroen",c:["0473/625291"],nt:"Om de 2 weken — volgende: week 25 (17 juni), week 27, week 29..."},
+  "Ecoclavis":{a:"Porte des Bâtisseurs 38, 7700 Moeskroen",c:["Pierre Kemseke: +32 479 62 01 71"],nt:"Om de 2 weken — volgende: week 25 (17 juni), week 27, week 29..."},
+  "Basic Business":{a:"Rue de la Terre A Briques 39, 7522 Tournai",c:[],nt:"1e woensdag van de maand"},
+  "Jambo-Ra":{a:"Oudenaardsesteenweg 380, 8581 Avelgem",c:[],nt:"Elke 3e week"},
+  "De Wulf Gavere":{a:"Gentweg 76, 9890 Gavere",c:["Rudi Neirinck: 09 374 10 28"],nt:"1 paar schoenen terug meepakken"},
+  "All Food Machines":{a:"Begoniastraat 23 D, 9800 Deinze",c:["Vanhoutte Dimitri: 09 384 07 74 / 0475 32 69 17"]},
+  "Campens":{a:"Spoorwegstraat 73, 8530 Harelbeke",c:["Christophe Hoste: +32 56 22 26 20"]},
+  "Euromeat":{a:"Slachthuisstraat 46, 7700 Moeskroen",c:[]},
+  "Bens Retail":{a:"Westerring 19, 9700 Oudenaarde",c:[]},
+  "Hoca meat":{a:"Nieuwenhovestraat 8, 8540 Deerlijk",c:["Philip De Ganck: +32 56 222 620"]},
+  "Vanoverbeke":{a:"Liebaardstraat 62, 8792 Desselgem",c:[]},
+  "Detremmerie":{a:"Kazerneweg 9, 9770 Kruishoutem",c:[],nt:"Leveren in quality food nr 23a"},
+  "Proxes":{a:"Sluis 11, 9810 Nazareth",c:[]},
+  "Slagerij Dewa":{a:"Stedestraat 1, 8530 Harelbeke",c:[],nt:"30 min op voorhand bellen: 0473/77.88.75"},
+  "Breydel":{a:"Legen Heirweg 2, 9890 Gavere",c:[]},
+  "Delibarn Belgium":{a:"Antoon van der Pluymstraat 1, 2160 Wommelgem",c:["Danny: 03/3500666","0499/91.28.44"],nt:"Code: 1234A"},
+  "HASFOOD BVBA":{a:"Turfputten 6, 2250 Olen",c:["Franky Vennekens: 0478/516554"],nt:"Sleutel: 2008"},
+  "Bruynkens":{a:"Lammerdries-Zuid 16E, 2250 Olen",c:["Marc: 0475/471439"]},
+  "Buvens":{a:"",c:["0475 41 98 74"],nt:"Wisselend — bellen indien nodig"},
+  "Tops Foods":{a:"Lammerdries-oost 23, 2250 Olen",c:["Kris Renders: 0494/767688","+32 14 28 55 60"]},
+  "Starmeal":{a:"Nijverheidsstraat 56, 2260 Westerlo",c:[]},
+  "Marmo":{a:"Reppelsebaan 65, 3294 Molenstede",c:["Tim: 0491/711612","013 78 07 00"]},
+  "Ropa":{a:"Industrieterrein 1 9, 3290 Diest",c:["Jeroen: 0478/306014"]},
+  "Goldmeat":{a:"Industrieweg 6, 3550 Heusden-Zolder",c:["013/521704"],nt:"Om de 2 weken — Code: 3006 — volgende: week 20 (14 mei), week 22, week 24..."},
+  "Halal":{a:"Kiewitstraat 177, 3500 Hasselt",c:["Kristof Stiers: 0491/614152"]},
+  "Meat For You":{a:"Rue de la Cale Sèche 52, 4684 Oupeye",c:["Aubry Watrin: 0497/369268"]},
+  "Lovenfosse":{a:"Rue de Merckhof 44, 4880 Aubel",c:["Olivier: 0492/257317"]},
+  "Detry":{a:"Rue de Merckhof 110, 4880 Aubel",c:["0032 87 680 627"]},
+  "D'Argifral":{a:"Avenue Mercury 5, 4650 Verviers",c:["087 33 66 59","0470/943889"]},
+  "Legon":{a:"Rue de l'Abbaye 89, 4040 Herstal",c:[]},
+  "BKS":{a:"Chemin de la Xhénorie 1A, 4890 Thimister",c:["Vivian: 0032 87 310 906"],nt:"Ophalen"},
+  "Marcotty":{a:"Av. de l'Energie 16, 4432 Ans",c:["Heidi Ghysenbergh: 0442/479710"],nt:"Altijd de LAATSTE stop op donderdag"},
+  "De Keyser Aartselaar":{a:"Industrieweg 15, 2630 Aartselaar",c:["Carolina Kandorero: +32 38 70 54 10"]},
+  "Menken":{a:"Boomse Steenweg 38, 2630 Aartselaar",c:["Joeri Wuyts: +32 38 70 89 85"]},
+  "Luka":{a:"Mechelsesteenweg 780, 1800 Vilvoorde",c:["Thomas Leemans: 02 251 13 37 / 0496 26 33 26"]},
+  "Walravens":{a:"Rue Uyttenhove 80, 1090 Jette",c:["Anne Walravens: +32 24 21 77 63 / 0475 575 383"]},
+  "Viangros":{a:"Bollinckxstraat 201, 1070 Anderlecht",c:["Hadrien Colbrant: +32 25 58 34 25"]},
+  "Vlevico/colruyt":{a:"Bilkensveld 3, 1500 Halle",c:["Kris Dejonghe: +32 23 63 55 45","Sandra Detroyer: 0474/71 17 19"]},
+  "Charling":{a:"Zetsel 2, 1730 Asse",c:["Koen Ryssaert: +32 24 54 06 62"]},
+  "EJ Foods":{a:"Nijverheidszone Begijnenmeers 39/A, 1770 Liedekerke",c:["+32 53 68 16 10"]},
+  "Teugels":{a:"D'helst 14B, 9280 Lebbeke",c:[]},
+  "Belki":{a:"Wijngaardveld 50, 9300 Aalst",c:["Dirk Van Tittelboom: +32 53 77 13 36"]},
+  "Melior":{a:"Evenbroekveld 30 A, 9420 Erpe-Mere",c:["Evy Brumer: +32 53 83 66 55"]},
+  "Cornby":{a:"Akkerhage 6, 9000 Gent",c:["Karin Geirnaert: +32 92 21 89 06"]},
+  "Goeminne Slagerij":{a:"Kapelstraat 185, 2660 Antwerpen",c:[]},
+  "Sanpareil":{a:"Mechelseweg 90, 1880 Kapelle-op-den-Bos",c:[],nt:"Sleutel: 568"},
+  "Ceulemans":{a:"Brusselsesteenweg 112, 1980 Zemst",c:["+32 15 61 13 77"],nt:"Na Sanpareil — Voor Luka"},
+  "Agape":{a:"Antoon Van Osslaan 1 bus 24, 1120 Brussel",c:[],nt:"Zwart gebouw, zijdeur binnengaan"},
+  "Transmeat":{a:"Oudemanstraat 15, 1840 Londerzeel",c:["+32 52 30 59 30"]},
+  "Straetmans":{a:"Ninoofsesteenweg 26, 1750 Sint-Kwintens-Lennik",c:[]},
+  "Bevica":{a:"Jules Moretuslei 356, 2610 Wilrijk",c:[],nt:"Afzetten bij de bakker"},
+  "Alero Topdog":{a:"Mellesteenweg 2A, 9230 Wetteren",c:["0475 91 92 27"],nt:"Witte deur om de hoek naast de twee poorten"},
+  "Chantal Laevens":{a:"Dorp 14, 9860 Oosterzele",c:["09 362 47 59"]},
+  "Intersalami":{a:"",c:[],nt:"Na Melior — Voor Cornby"},
+  "Verstraete":{a:"Wingensesteenweg 16, 8750 Zwevezele",c:[],nt:"Steeds na De Coster — Voor Veos"},
+  "Spegelaere":{a:"Fabrieksweg 5, 8480 Eernegem",c:[],nt:"Met Vannieuwenhuyze: na Laeremans | Zonder Vannieuwenhuyze: voor t houtlandt en voor De Keyzer Ossaer"},
+  "D&D Aalter":{a:"Aalter",c:[],nt:"Wisselend — voor Goodmeat"},
+  "Culinaire Slagerij":{a:"Rijksweg 330, 8710 Wielsbeke",c:[]},
+  "Crombez":{a:"Secretaris Vanmarckelaan 21, 8560 Wevelgem",c:[]},
+  "Agrifreez":{a:"Provinciebaan 66, 8840 Staden",c:[]},
+  "Slagerij Robby en Angelique":{a:"Statiestraat 25, 8720 Dentergem",c:[]},
+  "Export Tielt":{a:"Wingensesteenweg 60, 8700 Tielt",c:["Nathalie Vlamynck: +32 51 26 27 84"]},
+  "Beenhouwer Decupere":{a:"Beselarestraat 285, 8980 Zonnebeke",c:["0495784370"],nt:"Sleutel 1418"},
+  "Pasfrost":{a:"Passendalestraat 80, 8980 Zonnebeke",c:[],nt:"Volgorde: Covamaat → Dejaeghere → Pasfrost → Colli. Met Decupere: na Decupere"},
+  "Dejaeghere":{a:"Peperstraat 16/B, 8920 Langemark-Poelkapelle",c:["Eef: 0497 47 10 36"],nt:"Volgorde: Covamaat → Dejaeghere → Pasfrost → Colli. Met Markey: na Decupere"},
+  "Calibra":{a:"Moorseelsesteenweg 228, 8800 Roeselare",c:["051 26 95 95"],nt:"Dimitry Wary"},
+  "Westfro":{a:"Grote Veldstraat 114, 8840 Staden",c:["Christophe: 0493 97 44 11"]},
+  "Koen en Veerle bvba":{a:"Meensesteenweg 420, 8800 Roeselare",c:[],nt:"Rood bakje"},
+  "Polca":{a:"Lodewijk de Raetlaan 40, 8870 Izegem",c:["Tommy: 051/33 15 96"]},
+  "Roussel Onions":{a:"Ieperstraat 221, 8560 Wevelgem",c:[]},
+  "D'Arta":{a:"Pittemsestraat 58/A, 8850 Ardooie",c:["Jofri Bruggeman: 051 74 00 89","Zerdar: 0485 85 64 82"],nt:"Bellen nr1, geen gehoor → weegbrug → nr2 bellen"},
+  "Bert Maes":{a:"Tieltstraat 132a, 8760 Meulebeke",c:["+32 51 58 43 48"]},
+  "Seracraft":{a:"Rolariusweg 6, 8800 Roeselare",c:[]},
+  "Hanssens Catering":{a:"Ambachtenlaan 2, 8560 Wevelgem",c:["Dries: 0495 72 37 90","056 43 53 73"]},
+  "Slagerij 't Dorp":{a:"Vrijheidsplein 4, 8930 Menen",c:[]},
+};
+
+// ===== FIREBASE SYNC =====
+const FIREBASE_URL = "https://delmo-planning2-default-rtdb.europe-west1.firebasedatabase.app";
+const FB_CONFIG = { databaseURL: FIREBASE_URL };
+let fbApp, fbDb, fbConnected = false;
+
+function resetFirebase(){
+  if(!fbConnected || !fbDb){
+    alert('Geen verbinding met Firebase. Controleer uw internetverbinding.');
+    return;
+  }
+  const bevestig = confirm('⚠️ Weet u zeker dat u Firebase wilt resetten?\n\nDit wist alle opgeslagen wijzigingen in de cloud (notities, extra klanten, historiek) en laadt de basisgegevens opnieuw.\n\nDruk OK om te bevestigen.');
+  if(!bevestig) return;
+
+  updateSyncStatus('resetten...');
+  // Wis alle Firebase data
+  fbDb.ref('/').remove().then(() => {
+    // Reset lokale opslag ook
+    localStorage.removeItem('sylvie_db');
+    localStorage.removeItem('sylvie_actief');
+    localStorage.removeItem('sylvie_history');
+    localStorage.removeItem('sylvie_temp_notes');
+    // Herlaad DEFAULT_DB naar Firebase
+    DB = JSON.parse(JSON.stringify(DEFAULT_DB));
+    fbSet('db', DB);
+    updateSyncStatus('verbonden');
+    alert('✅ Firebase succesvol gereset! De basisgegevens zijn opnieuw ingeladen.');
+    // Re-render
+    const dateStr = document.getElementById('di').value;
+    if(dateStr) render(dateStr);
+  }).catch(err => {
+    alert('❌ Reset mislukt: ' + err.message);
+    updateSyncStatus('fout bij reset');
+  });
+}
+
+function initFirebase(){
+  try {
+    fbApp = firebase.initializeApp(FB_CONFIG);
+    fbDb = firebase.database();
+    fbConnected = true;
+    updateSyncStatus('verbinding maken...');
+    // Listen for connection state
+    fbDb.ref('.info/connected').on('value', snap => {
+      if(snap.val()) {
+        updateSyncStatus('verbonden');
+        syncFromFirebase();
+      } else {
+        updateSyncStatus('offline - lokaal opslaan');
+      }
+    });
+  } catch(e) {
+    console.error('Firebase init fout:', e);
+    fbConnected = false;
+    updateSyncStatus('offline');
+  }
+}
+
+function updateSyncStatus(msg){
+  const el = document.getElementById('syncStatus');
+  if(el) {
+    const connected = msg === 'verbonden';
+    el.textContent = connected ? '🟢 Gesynchroniseerd' : '🟡 ' + msg;
+    el.style.color = connected ? '#34c759' : '#ff9500';
+  }
+}
+
+function fbSet(path, data){
+  if(!fbConnected || !fbDb) return;
+  try { fbDb.ref(path).set(data); } catch(e) { console.error('Firebase set fout:', e); }
+}
+
+function fbGet(path, callback){
+  if(!fbConnected || !fbDb) { callback(null); return; }
+  try { fbDb.ref(path).once('value').then(s => callback(s.val())).catch(() => callback(null)); } catch(e) { callback(null); }
+}
+
+function syncFromFirebase(){
+  // Real-time listener voor DB
+  fbDb.ref('db').on('value', snap => {
+    const data = snap.val();
+    if(data){ DB = Object.assign({}, DEFAULT_DB, data); }
+  });
+
+  // Real-time listener voor actieve klanten
+  fbDb.ref('actief').on('value', snap => {
+    const data = snap.val();
+    if(data) localStorage.setItem('sylvie_actief', JSON.stringify(data));
+  });
+
+  // Real-time listener voor wisselende klanten (nieuw toegevoegde klanten)
+  fbDb.ref('wisselend').on('value', snap => {
+    const data = snap.val();
+    if(data){
+      // Merge Firebase wisselend met lokale WISSELEND
+      Object.keys(data).forEach(dag => {
+        if(!WISSELEND[dag]) WISSELEND[dag] = [];
+        data[dag].forEach(naam => {
+          if(!WISSELEND[dag].includes(naam)) WISSELEND[dag].push(naam);
+        });
+      });
+    }
+  });
+
+  // Real-time listener voor historiek - gedeeld tussen alle toestellen
+  fbDb.ref('history').on('value', snap => {
+    const data = snap.val();
+    if(data){
+      // Merge Firebase history met lokale history (neem meest recente)
+      try {
+        const localHistory = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+        const merged = Object.assign({}, data, localHistory);
+        localStorage.setItem('sylvie_history', JSON.stringify(merged));
+      } catch(e) {
+        localStorage.setItem('sylvie_history', JSON.stringify(data));
+      }
+      updateSyncStatus('verbonden');
+    }
+  });
+
+  // Real-time listener voor temp notes
+  fbDb.ref('temp_notes').on('value', snap => {
+    const data = snap.val();
+    if(data) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data));
+  });
+
+  // Initieel laden en re-render
+  fbDb.ref('history').once('value', snap => {
+    const data = snap.val();
+    if(data) localStorage.setItem('sylvie_history', JSON.stringify(data));
+    const dateStr = document.getElementById('di').value;
+    if(dateStr) render(dateStr);
+  });
+}
+
+// Override saveDB to also save to Firebase
+const _origSaveDB = function(){
+  try{ localStorage.setItem('sylvie_db', JSON.stringify(DB)); }catch(e){}
+  fbSet('db', DB);
+};
+
+// Override saveActieveKlanten
+const _origSaveActief = function(data){
+  try{ localStorage.setItem('sylvie_actief', JSON.stringify(data)); }catch(e){}
+  fbSet('actief', data);
+};
+
+// Override saveHistoriek later (after it's defined)
+let _histSaveTimeout = null;
+function fbSaveHistory(){
+  clearTimeout(_histSaveTimeout);
+  _histSaveTimeout = setTimeout(() => {
+    try {
+      const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+      fbSet('history', h);
+    } catch(e) {}
+  }, 500); // debounce 0.5s
+}
+
+function fbSaveTempNotes(){
+  try {
+    const t = JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}');
+    fbSet('temp_notes', t);
+  } catch(e) {}
+}
+
+let DB=JSON.parse(JSON.stringify(DEFAULT_DB));
+function loadSavedDB(){try{const s=localStorage.getItem('sylvie_db');if(s)DB=Object.assign({},DEFAULT_DB,JSON.parse(s));}catch(e){}}
+function saveDB(){try{localStorage.setItem('sylvie_db',JSON.stringify(DB));}catch(e){} fbSet('db',DB);}
+loadSavedDB();
+function getInfo(n){return DB[n]||{a:'',c:[],nt:''};}
+
+const DEPOT={n:"Vertrek / Depot",a:"Noorwegenstraat 29 D, 9940 Evergem",depot:true};
+
+const ROUTES={
+  maandag_oneven:['Vlevy','Velda','Bauwens','Q-Food','Thierens','Ernell','Eurokip','De Cock / Casadoro','Hemelaer','Beltaste'],
+  maandag_even:['Vlevy','Vleeshandel De Brandt','Velda','Bauwens','Q-Food','De Cock / Casadoro','Hemelaer','Beltaste'],
+  dinsdag_oneven:['Veos','t houtlandt','De Keyzer Ossaer','Schoenmaker laurens','Delvan','De Beauvoorder','Dierendonck','Vlaemynck','Laeremans','Cube','Van Landschoot G. & Zn. NV'],
+  dinsdag_even:['Veos','De Keyzer Ossaer','Vlaemynck','Dierendonck','De Beauvoorder','Delvan','Schoenmaker laurens','Laeremans','FAG','Meco'],
+  woensdag_a:['Bamatec','Dobbels','Volys','t spoor','Hofkip','Noyez','Covameat','Colli service','Greenyard Foods','Lavameat','Serge','Goodmeat','M&M slijpwerk (poort 10)','M&M afdeling 22','M&M afdeling 71','M&M afdeling 83'],
+  woensdag_b_oneven:['Vandenbogaerde','Debaenst','Vlevia','Dicogel','Plukon','De Wulf Gavere','All Food Machines'],
+  woensdag_b_even:['Vandenbogaerde','Debaenst','Vlevia','Dicogel','Plukon','Hostijn','De Wulf Gavere','All Food Machines'],
+  donderdag_oneven:['Delibarn Belgium','HASFOOD BVBA','Bruynkens','Marmo','Ropa','Meat For You','Lovenfosse','Detry',"D'Argifral"],
+  donderdag_even:['Delibarn Belgium','HASFOOD BVBA','Starmeal','Bruynkens','Marmo','Ropa','Meat For You','Lovenfosse','Detry'],
+  vrijdag_oneven:['De Keyser Aartselaar','Menken','Walravens','Viangros','Vlevico/colruyt','Charling','EJ Foods','Teugels','Belki','Melior','Cornby'],
+  vrijdag_even:['De Keyser Aartselaar','Menken','Viangros','Vlevico/colruyt','Charling','EJ Foods','Teugels','Belki','Melior','Cornby'],
+};
+
+const WISSELEND={
+  maandag:['Amando','Van Bogaert bvba','Breughel Food','Signature foods Belgium'],
+  dinsdag:['Verstraete','Slachthuis De Coster','Dujardin','Bernard Stevens','Den Huilaert','Vannieuwenhuyze','Spegelaere','Hotelschool ter Duinen','AZ WEST','Hanssens Oostende','Mahu Meat','Limousin'],
+  woensdag_a:['Chicken Masters',"Slagerij 't Dorp",'Slagerij Robby en Angelique','Culinaire Slagerij','Hanssens Catering','Calibra','Crombez','Roussel Onions','Beenhouwer Decupere','Pasfrost','Dejaeghere','Markey','Agrifreez','Westfro','Seracraft','Koen en Veerle bvba','Vleeswaren Hava',"D'Arta",'Bert Maes','Polca','Delavi Nv','Export Tielt','Slachthuis De Coster','D&D Aalter'],
+  woensdag_b:['Detremmerie','Vleeswaren Duca','Ecoclavis','Euromeat','Campens','Hoca meat','Jambo-Ra','Basic Business','Bens Retail','Breydel','Proxes','Vanoverbeke','Slagerij Dewa'],
+  donderdag:['Goldmeat','Buvens','Tops Foods','Halal','Legon','BKS','Marcotty'],
+  vrijdag:['Goeminne Slagerij','Sanpareil','Ceulemans','Agape','Transmeat','Straetmans','Bevica','Alero Topdog','Chantal Laevens','Intersalami'],
+};
+
+function weekNr(d){const dt=new Date(d);dt.setHours(0,0,0,0);dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);const w1=new Date(dt.getFullYear(),0,4);return 1+Math.round(((dt-w1)/86400000-3+(w1.getDay()+6)%7)/7);}
+function dagNaam(d){return['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'][d.getDay()];}
+
+let currentKlanten=[],currentWisselend=[],currentKey='',currentRouteKey='',currentLabel='',editIndex=-1,woensdagRit='A';
+
+function getRouteKey(dag,wk){
+  const o=wk%2!==0;
+  if(dag==='maandag')return o?'maandag_oneven':'maandag_even';
+  if(dag==='dinsdag')return o?'dinsdag_oneven':'dinsdag_even';
+  if(dag==='woensdag')return woensdagRit==='A'?'woensdag_a':(wk%2===0?'woensdag_b_even':'woensdag_b_oneven');
+  if(dag==='donderdag')return o?'donderdag_oneven':'donderdag_even';
+  if(dag==='vrijdag')return o?'vrijdag_oneven':'vrijdag_even';
+  return '';
+}
+
+function getRoute(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  const dag=dagNaam(d),wk=weekNr(d),even=wk%2===0;
+  if(dag==='zaterdag'||dag==='zondag')return{dag,klanten:[],wk,weekend:true};
+  const rk=getRouteKey(dag,wk);
+  // Voor woensdag: key en wk2 gebaseerd op woensdagRit (A of B)
+  const key=dag==='woensdag'?(woensdagRit==='A'?'woensdag_a':'woensdag_b'):dag;
+  const wk2=dag==='woensdag'?(woensdagRit==='A'?'woensdag_a':'woensdag_b'):dag;
+
+  // baseKlanten op basis van rk (correct route key incl even/oneven)
+  let baseKlanten = (ROUTES[rk]||[]).map(n=>({n,...getInfo(n)}));
+
+  // Goldmeat donderdag: om de 2 weken (anker: week 20 = 14 mei = aanwezig)
+  const goldmeatAan = (wk - 20) % 2 === 0;
+  if((key==='donderdag') && !goldmeatAan){
+    baseKlanten = baseKlanten.filter(k=>k.n!=='Goldmeat');
+  }
+
+  // Limousin dinsdag: om de 2 weken (anker: week 27 = 30 juni = aanwezig)
+  const limousinAan = (wk - 27) % 2 === 0;
+  if(dag==='dinsdag' && !limousinAan){
+    baseKlanten = baseKlanten.filter(k=>k.n!=='Limousin');
+  }
+
+  // Ecoclavis en Vleeswaren Duca woensdag B: om de 2 weken (anker: week 25 = 17 juni = aanwezig)
+  const ducaAan = (wk - 25) % 2 === 0;
+  if(key==='woensdag_b' && !ducaAan){
+    baseKlanten = baseKlanten.filter(k=>k.n!=='Vleeswaren Duca' && k.n!=='Ecoclavis');
+  }
+
+  // Chicken Masters woensdag A: om de 2 weken (anker: week 21 = 20 mei = aanwezig)
+  const chickenAan = (wk - 21) % 2 === 0;
+  if(key==='woensdag_a' && !chickenAan){
+    baseKlanten = baseKlanten.filter(k=>k.n!=='Chicken Masters');
+  }
+
+  // Luka: 2 weken aan, 1 week af (anker: week 19 = aanwezig)
+  const lukaAan = (wk - 19) % 3 !== 2;
+  if(dag==='vrijdag' && lukaAan){
+    // Luka na Menken (positie 1, index 1)
+    const menkenIdx = baseKlanten.findIndex(k=>k.n==='Menken');
+    if(menkenIdx !== -1) baseKlanten.splice(menkenIdx+1,0,{n:'Luka',...getInfo('Luka')});
+    else baseKlanten.splice(2,0,{n:'Luka',...getInfo('Luka')});
+  }
+  return{dag,key,routeKey:rk,klanten:baseKlanten,wisselend:(WISSELEND[wk2]||[]).map(n=>({n,...getInfo(n)})),wk,even};
+}
+
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+function addTelField(listId,val=''){
+  const div=document.createElement('div');div.className='contact-row';
+  div.innerHTML=`<input type="text" placeholder="bv. 0475 12 34 56" value="${val.replace(/"/g,'&quot;')}"><button onclick="this.parentNode.remove()">✕</button>`;
+  document.getElementById(listId).appendChild(div);
+}
+function getTels(listId){return Array.from(document.querySelectorAll('#'+listId+' input')).map(i=>i.value.trim()).filter(Boolean);}
+
+function buildPosDropdown(suggestedPos){
+  const sel=document.getElementById('mPos');
+  sel.innerHTML='<option value="0">⬆️ Als eerste stop</option>';
+  currentKlanten.forEach((k,i)=>{
+    const o=document.createElement('option');
+    o.value=i+1;
+    o.textContent='Na stop '+(i+1)+': '+k.n;
+    sel.appendChild(o);
+  });
+  const box=document.getElementById('suggestionBox');
+  if(suggestedPos!==null){
+    sel.value=suggestedPos;
+    const afterN = suggestedPos===0?'begin van de rit':'stop '+suggestedPos+': '+currentKlanten[suggestedPos-1].n;
+    const beforeN = suggestedPos<currentKlanten.length?'stop '+(suggestedPos+1)+': '+currentKlanten[Math.min(suggestedPos,currentKlanten.length-1)].n:'einde van de rit';
+    box.textContent='💡 Automatisch voorgesteld: Na '+afterN+' — Voor '+beforeN;
+    box.style.display='block';
+  } else {
+    sel.value=currentKlanten.length;
+    box.style.display='none';
+  }
+}
+
+function openAddModal(naam='',suggestedPos=null){
+  document.getElementById('mNaam').value=naam;
+  const info=naam?getInfo(naam):{a:'',c:[],nt:''};
+  document.getElementById('mAdres').value=info.a||'';
+  document.getElementById('mNote').value=info.nt||'';
+  document.getElementById('mTelList').innerHTML='';
+  if(info.c&&info.c.length>0)info.c.forEach(t=>addTelField('mTelList',t));
+  else addTelField('mTelList');
+  buildPosDropdown(suggestedPos);
+  document.getElementById('modalAdd').classList.add('open');
+}
+
+function addKlant(){
+  const naam=document.getElementById('mNaam').value.trim();
+  const adres=document.getElementById('mAdres').value.trim();
+  const note=document.getElementById('mNote').value.trim();
+  const tels=getTels('mTelList');
+  const pos=parseInt(document.getElementById('mPos').value);
+  if(!naam){alert('Geef een naam in');return;}
+
+  // Voeg toe aan huidige rit
+  currentKlanten.splice(pos,0,{n:naam,a:adres,c:tels,nt:note,extra:true});
+
+  // Sla op in DB zodat adres/tel bewaard blijft
+  if(!DB[naam]) DB[naam]={a:adres,c:tels,nt:note};
+  saveDB();
+
+  // Voeg automatisch toe aan wisselende lijst van deze dag
+  const dagKey = currentKey==='woensdag_a'?'woensdag_a':
+                 currentKey==='woensdag_b'||currentKey==='woensdag_b_even'||currentKey==='woensdag_b_oneven'?'woensdag_b':
+                 currentKey;
+  if(!WISSELEND[dagKey]) WISSELEND[dagKey]=[];
+  if(!WISSELEND[dagKey].includes(naam)){
+    WISSELEND[dagKey].push(naam);
+    // Sla wisselend op in Firebase
+    fbSet('wisselend', WISSELEND);
+    console.log(naam+' toegevoegd aan wisselende lijst van '+dagKey);
+  }
+
+  saveHistoriek();
+  closeModal('modalAdd');
+  renderList();
+}
+
+function removeExtra(idx){currentKlanten.splice(idx,1);saveHistoriek();renderList();}
+
+function addFromWissel(naam){
+  const sp=getSuggestedPos(naam,currentRouteKey,currentKlanten);
+  openAddModal(naam,sp);
+}
+
+function openEditModal(idx){
+  editIndex=idx;
+  const k=currentKlanten[idx];
+  document.getElementById('eNaam').value=k.n;
+  document.getElementById('eAdres').value=k.a||'';
+  document.getElementById('eNote').value=k.nt||'';
+  document.getElementById('eTelList').innerHTML='';
+  if(k.c&&k.c.length>0)k.c.forEach(t=>addTelField('eTelList',t));
+  else addTelField('eTelList');
+  document.getElementById('modalEdit').classList.add('open');
+}
+function saveEdit(){
+  const naam=document.getElementById('eNaam').value.trim();
+  const adres=document.getElementById('eAdres').value.trim();
+  const note=document.getElementById('eNote').value.trim();
+  const tels=getTels('eTelList');
+  if(!naam){alert('Naam mag niet leeg zijn');return;}
+  const orig=currentKlanten[editIndex].n;
+  DB[orig]={a:adres,c:tels,nt:note};
+  if(naam!==orig)DB[naam]={a:adres,c:tels,nt:note};
+  saveDB();
+  currentKlanten[editIndex]={...currentKlanten[editIndex],n:naam,a:adres,c:tels,nt:note};
+  saveHistoriek();closeModal('modalEdit');renderList();
+}
+
+function skipKlant(idx){
+  currentKlanten[idx].skipped = !currentKlanten[idx].skipped;
+  saveHistoriek();renderList();
+}
+
+function moveKlant(idx, dir){
+  const newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= currentKlanten.length) return;
+  const tmp = currentKlanten[idx];
+  currentKlanten[idx] = currentKlanten[newIdx];
+  currentKlanten[newIdx] = tmp;
+  renderList();
+  // Scroll de verplaatste kaart in beeld
+  setTimeout(()=>{
+    const cards = document.querySelectorAll('.card:not(.depot)');
+    if(cards[newIdx]) cards[newIdx].scrollIntoView({behavior:'smooth', block:'center'});
+  }, 50);
+}
+
+function switchRit(rit){
+  woensdagRit = rit;
+  render(document.getElementById('di').value);
+}
+
+function doPrint(){
+  document.querySelectorAll('.card.skipped').forEach(el => el.setAttribute('data-hidden','1') || (el.style.display='none'));
+  document.getElementById('printTitle').textContent='Dagplanning Delmo';
+  document.getElementById('printSub').textContent=currentLabel;
+  const visCount = currentKlanten.filter(k=>!k.skipped).length;
+  document.getElementById('printCount').textContent=visCount+' stops';
+  window.print();
+  setTimeout(() => document.querySelectorAll('[data-hidden]').forEach(el => { el.style.display=''; el.removeAttribute('data-hidden'); }), 500);
+}
+
+function cardHTML(k,i,isDepot){
+  if(isDepot)return`<div class="card depot">
+    <div class="cheader no-print"><span class="num">🏠</span><span class="cname">${k.n}</span></div>
+    <div class="caddr no-print">${k.a}</div>
+    <span class="num print-only">🏠</span>
+    <div class="card-col-main print-only"><span class="cname">${k.n}</span><span class="caddr"> ${k.a}</span></div>
+  </div>`;
+  const skippedClass = k.skipped ? ' skipped' : '';
+  const skipLbl = k.skipped ? '<span class="skip-label">Geannuleerd</span>' : '';
+  const skipTxt = k.skipped ? '↩ Herstellen' : '✕ Annuleren';
+  return`<div class="card${k.extra?' extra':''}${skippedClass}">
+    <!-- Scherm weergave -->
+    <div class="cheader no-print"><span class="num">${i+1}</span><span class="cname">${k.n}</span>${k.extra?'<span class="extra-label">Extra</span>':''}${k.actief?'<span class="actief-label">🔔 Actief</span>':''}${skipLbl}</div>
+    ${k.skipped ? '' : `<div class="no-print">${k.a?`<div class="caddr">📍 ${k.a}</div>`:''}
+    ${k.nt?`<div class="cnote-perm">📌 ${k.nt}</div>`:''}
+    ${k.tempNote?`<div class="cnote-temp">⏰ ${k.tempNote}</div>`:''}
+    ${(k.c||[]).map(c=>`<div class="ccontact">📞 ${c}</div>`).join('')}</div>`}
+    <!-- Print kolommen -->
+    <span class="num print-only">${i+1}</span>
+    <div class="card-col-main print-only">
+      <span class="cname">${k.n}${k.skipped?' ✕':''}</span>
+      ${k.a?`<span class="caddr">${k.a}</span>`:''}
+    </div>
+    <div class="card-col-tel print-only">${(k.c||[]).join('<br>')}</div>
+    <div class="card-col-note print-only">${[k.nt?'📌 '+k.nt:'', k.tempNote?'⏰ '+k.tempNote:''].filter(Boolean).join(' | ')}</div>
+    <div class="card-actions no-print">
+      <button class="move-btn" onclick="moveKlant(${i},-1)" ${i===0?'disabled style="opacity:0.3"':''}>&#8679;</button>
+      <button class="move-btn" onclick="moveKlant(${i},1)" ${i===currentKlanten.length-1?'disabled style="opacity:0.3"':''}>&#8681;</button>
+      <button class="note-btn" onclick="openNoteModal(${i})">📝 Notitie</button>
+      <button class="skip-btn" onclick="skipKlant(${i})">${skipTxt}</button>
+      ${k.extra&&!k.skipped?`<button class="del-btn" onclick="removeExtra(${i})">✕ Eenmalig verwijderen</button>`:''}
+      ${k.actief?`<button class="del-btn" style="border-color:#ff9500;color:#ff9500" onclick="toggleActief('${k.n}','${currentKey}','${currentKey}')">🔕 Deactiveer</button>`:''}
+    </div>
+  </div>`;
+}
+
+function renderList(){
+  const extraCount=currentKlanten.filter(k=>k.extra).length;
+  let extra='';
+  if(currentKey==='woensdag_a')extra=' · Rit A';
+  if(currentKey==='woensdag_b')extra=' · Rit B';
+  const badge=extraCount>0?` <span style="color:#0071e3">(+${extraCount} extra)</span>`:'';
+
+  const woensdagTabs = currentKey==='woensdag_a'||currentKey==='woensdag_b' ? `
+    <div class="rit-tabs no-print">
+      <button class="rit-tab ${woensdagRit==='A'?'active':''}" onclick="switchRit('A')">🚐 Rit A — Kortrijk–Tielt–Aalter</button>
+      <button class="rit-tab ${woensdagRit==='B'?'active':''}" onclick="switchRit('B')">🚐 Rit B — Moeskroen–Gavere</button>
+    </div>` : '';
+  let html=`<div class="btn-bar no-print">
+    <button class="btn primary" onclick="openAddModal('',null)">+ Klant toevoegen</button>
+    <button class="btn green" onclick="doPrint()">🖨️ Afdrukken</button>
+    <button class="btn hist no-print" onclick="openHistoriek()">📋 Historiek</button>
+    <button class="btn export no-print" onclick="exportHistoriek()">💾 Excel</button>
+    <button class="btn reset no-print" onclick="resetFirebase()">🔄 Reset Firebase</button>
+  </div>
+  ${woensdagTabs}
+  <div class="countbadge">${currentKlanten.length} stops${extra}${badge}</div>
+  <div id="prepBadge" style="display:none;font-size:11px;color:#ff9500;padding:2px 1rem">📋 Voorbereide agenda — wijzigingen worden onthouden</div>
+  <div id="cardList">
+  ${cardHTML(DEPOT,0,true)}
+  </div>`;
+
+  currentKlanten.forEach((k,i)=>{
+    html+=`<div class="arrow">↓</div><div id="cardList">${cardHTML(k,i,false)}</div>`;
+  });
+  html+=`<div class="arrow">↓</div>${cardHTML({...DEPOT,n:"Terug: Depot"},0,true)}`;
+
+  if(currentWisselend.length>0){
+    html+='<div class="wissel-titel no-print">Wisselende klanten — klik om op de juiste plaats toe te voegen</div>';
+    currentWisselend.forEach(k=>{
+      const actf = isActief(k.n, currentKey);
+      const sp=getSuggestedPos(k.n,currentRouteKey,currentKlanten);
+      let posLabel='';
+      if(sp!==null){
+        const afterName = sp===0?'begin van de rit':'stop '+sp+': '+currentKlanten[Math.min(sp-1,currentKlanten.length-1)].n;
+        const beforeName = sp<currentKlanten.length?'stop '+(sp+1)+': '+currentKlanten[Math.min(sp,currentKlanten.length-1)].n:'einde van de rit';
+        posLabel=`<span class="pos-label">→ Na ${afterName} — Voor ${beforeName}</span>`;
+      }
+      html+=`<div class="card no-print" style="opacity:0.75;border-style:dashed;margin:0.4rem 1rem">
+        <div class="cheader"><span class="num" style="border-style:dashed">?</span><span class="cname">${k.n}</span>${posLabel}</div>
+        ${k.a?`<div class="caddr">📍 ${k.a}</div>`:''}
+        ${(k.c||[]).map(c=>`<div class="ccontact">📞 ${c}</div>`).join('')}
+        <div class="card-actions">          <button class="btn primary" style="font-size:11px;padding:4px 10px" onclick="addFromWissel('${k.n.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">+ Eenmalig toevoegen</button>
+          <button class="btn" style="font-size:11px;padding:4px 10px;background:${actf?'#ff9500':'#f5f5f7'};border-color:${actf?'#ff9500':'#ccc'};color:${actf?'#fff':'#1d1d1f'}" onclick="toggleActief('${k.n.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${currentKey}','${currentKey}')">${actf?'🔔 Actief (klik om uit te zetten)':'🔕 Activeer voor elke week'}</button>
+        </div>
+      </div>`;
+    });
+  }
+  document.getElementById('out').innerHTML=html;
+}
+
+// ===== HISTORIEK =====
+// ===== ACTIEVE SPORADISCHE KLANTEN =====
+function getActieveKlanten(){
+  try{ return JSON.parse(localStorage.getItem('sylvie_actief')||'{}'); }
+  catch(e){ return {}; }
+}
+function saveActieveKlanten(data){
+  try{ localStorage.setItem('sylvie_actief', JSON.stringify(data)); }
+  catch(e){ console.error('Opslaan actieve klanten mislukt:', e); }
+  fbSet('actief', data);
+}
+
+function loadActieveKlanten(dag, key){
+  const actief = getActieveKlanten();
+  const dagKey = key || dag;
+  const actieveVoorDag = actief[dagKey] || actief[dag] || [];
+  actieveVoorDag.forEach(ak => {
+    if(!currentKlanten.find(k=>k.n===ak.n)){
+      currentKlanten.push({...ak, extra:true, actief:true});
+    }
+  });
+}
+
+function toggleActief(naam, dag, key){
+  const actief = getActieveKlanten();
+  const dagKey = key || dag;
+  if(!actief[dagKey]) actief[dagKey] = [];
+  const idx = actief[dagKey].findIndex(k=>k.n===naam);
+  if(idx !== -1){
+    actief[dagKey].splice(idx, 1);
+    // Remove from current list
+    const ci = currentKlanten.findIndex(k=>k.n===naam&&k.actief);
+    if(ci !== -1) currentKlanten.splice(ci, 1);
+    saveActieveKlanten(actief);
+    renderList();
+    return false; // was active, now deactivated
+  } else {
+    const klantInfo = {...(getInfo(naam)||{a:'',c:[],nt:''}), n:naam, extra:true, actief:true};
+    actief[dagKey].push(klantInfo);
+    if(!currentKlanten.find(k=>k.n===naam)){
+      currentKlanten.push(klantInfo);
+    } else {
+      currentKlanten.find(k=>k.n===naam).actief = true;
+    }
+    saveActieveKlanten(actief);
+    renderList();
+    return true; // activated
+  }
+}
+
+function isActief(naam, key){
+  const actief = getActieveKlanten();
+  const dagKey = key || currentKey;
+  return !!(actief[dagKey]||[]).find(k=>k.n===naam);
+}
+
+// ===== NOTITIES =====
+let noteIndex = -1;
+
+function openNoteModal(idx){
+  noteIndex = idx;
+  const k = currentKlanten[idx];
+  document.getElementById('noteKlantNaam').textContent = k.n;
+  // Permanente notitie uit DB
+  const info = getInfo(k.n);
+  document.getElementById('nPerm').value = info.nt || k.nt || '';
+  // Tijdelijke notitie uit opgeslagen datum
+  const dateStr = document.getElementById('di').value;
+  const tempNotes = JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}');
+  const ritSuffix = currentKey ? '_' + currentKey : '';
+  const dayKey = dateStr + ritSuffix + '_' + k.n;
+  document.getElementById('nTemp').value = tempNotes[dayKey] || k.tempNote || '';
+  document.getElementById('modalNote').classList.add('open');
+}
+
+function saveNote(){
+  const perm = document.getElementById('nPerm').value.trim();
+  const temp = document.getElementById('nTemp').value.trim();
+  const k = currentKlanten[noteIndex];
+  const dateStr = document.getElementById('di').value;
+
+  // Save permanent note to DB
+  if(!DB[k.n]) DB[k.n] = {a:k.a||'',c:k.c||[],nt:''};
+  DB[k.n].nt = perm;
+  saveDB();
+  currentKlanten[noteIndex].nt = perm;
+
+  // Save temp note to localStorage
+  const tempNotes = JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}');
+  const ritSuffix = currentKey ? '_' + currentKey : '';
+  const dayKey = dateStr + ritSuffix + '_' + k.n;
+  if(temp) tempNotes[dayKey] = temp;
+  else delete tempNotes[dayKey];
+  // Clean old temp notes (older than 30 days)
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  Object.keys(tempNotes).forEach(key => {
+    const d = key.split('_')[0];
+    if(d && new Date(d) < cutoff) delete tempNotes[key];
+  });
+  localStorage.setItem('sylvie_temp_notes', JSON.stringify(tempNotes));
+  fbSaveTempNotes();
+  currentKlanten[noteIndex].tempNote = temp;
+
+  saveHistoriek();
+  closeModal('modalNote');
+  renderList();
+}
+
+function saveHistoriek(){
+  if(!currentKlanten.length) return;
+  const dateStr = document.getElementById('di').value;
+  if(!dateStr) return;
+  const histKey = dateStr + (currentKey ? '_' + currentKey : '');
+  try {
+    const history = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+    history[histKey] = {
+      label: currentLabel,
+      klanten: currentKlanten.map(k=>({
+        n: k.n,
+        a: k.a||'',
+        c: k.c||[],
+        nt: k.nt||'',
+        extra: k.extra||false,
+        skipped: k.skipped||false,
+        tempNote: k.tempNote||'',
+        actief: k.actief||false
+      }))
+    };
+    // Bewaar max 90 dagen
+    const keys = Object.keys(history).sort();
+    if(keys.length > 90) delete history[keys[0]];
+    localStorage.setItem('sylvie_history', JSON.stringify(history));
+    fbSaveHistory();
+  } catch(e){ console.error('Historiek opslaan mislukt:', e); }
+}
+
+function exportHistoriek(){
+  try {
+    const history = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+    const keys = Object.keys(history).sort();
+    if(!keys.length){
+      alert('Geen historiek beschikbaar om te exporteren.');
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // Overzichtsblad
+    const overzichtData = [
+      ['Datum', 'Dag & Week', 'Aantal stops', 'Extra klanten', 'Geannuleerd']
+    ];
+    keys.forEach(dateStr => {
+      const d = history[dateStr];
+      const totaal = d.klanten.length;
+      const extra = d.klanten.filter(k=>k.extra).length;
+      const geann = d.klanten.filter(k=>k.skipped).length;
+      overzichtData.push([dateStr, d.label||dateStr, totaal, extra, geann]);
+    });
+    const wsOverzicht = XLSX.utils.aoa_to_sheet(overzichtData);
+    wsOverzicht['!cols'] = [{wch:12},{wch:40},{wch:15},{wch:15},{wch:15}];
+    // Style header row
+    XLSX.utils.book_append_sheet(wb, wsOverzicht, 'Overzicht');
+
+    // Per dag een blad (max 30 meest recente)
+    const recentKeys = keys.slice(-30).reverse();
+    recentKeys.forEach(dateStr => {
+      const d = history[dateStr];
+      const dd = new Date(dateStr+'T12:00:00');
+      const mn=['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+      const sheetName = dd.getDate()+' '+mn[dd.getMonth()]+' '+dd.getFullYear();
+
+      const rows = [
+        [d.label || sheetName],
+        [],
+        ['#', 'Klant', 'Adres', 'Telefoon', 'Notitie', 'Status']
+      ];
+
+      d.klanten.forEach((k, i) => {
+        const status = k.skipped ? 'Geannuleerd' : k.extra ? 'Extra toegevoegd' : 'Vast';
+        const tel = (k.c||[]).join(' | ');
+        rows.push([i+1, k.n, k.a||'', tel, k.nt||'', status]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{wch:4},{wch:28},{wch:35},{wch:30},{wch:30},{wch:18}];
+      // Merge title row
+      ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:5}}];
+
+      // Safe sheet name (max 31 chars, no special chars)
+      const safeName = sheetName.replace(/[\/?*[\]:]/g,'').substring(0,31);
+      XLSX.utils.book_append_sheet(wb, ws, safeName);
+    });
+
+    // Download
+    const datum = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, 'Historiek_Sylvie_'+datum+'.xlsx');
+    console.log('Historiek geëxporteerd');
+  } catch(e) {
+    alert('Exporteren mislukt: '+e.message);
+    console.error(e);
+  }
+}
+
+function openHistoriek(){
+  const history = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+  const keys = Object.keys(history).sort().reverse();
+  const div = document.getElementById('histContent');
+  if(!div){alert('Historiek venster niet gevonden. Vernieuw de pagina.');return;}
+
+  if(!keys.length){
+    div.innerHTML='<p style="color:#888;font-size:14px;padding:1rem 0">Nog geen historiek beschikbaar.<br><br>De historiek wordt automatisch opgeslagen zodra u een datum kiest en de planning laadt. Kies eerst een datum, dan wordt die dag opgeslagen.</p>';
+    document.getElementById('modalHist').classList.add('open');
+    return;
+  }
+
+  // Show list of dates
+  let html = '<div style="max-height:60vh;overflow-y:auto">';
+  keys.forEach(histKey => {
+    const d = history[histKey];
+    const totaal = d.klanten.length;
+    const extra = d.klanten.filter(k=>k.extra).length;
+    const geann = d.klanten.filter(k=>k.skipped).length;
+    const extraTxt = extra>0?` · +${extra} extra`:'';
+    const geannTxt = geann>0?` · ${geann} geannuleerd`:'';
+    html+=`<div class="hist-item" onclick="showHistDetail('${histKey}')">
+      <div>
+        <div class="hist-datum">${d.label||histKey}</div>
+        <div class="hist-meta">${totaal} stops${extraTxt}${geannTxt}</div>
+      </div>
+      <span style="color:#ccc;font-size:18px">›</span>
+    </div>`;
+  });
+  html += '</div>';
+  div.innerHTML = html;
+  document.getElementById('modalHist').classList.add('open');
+}
+
+function showHistDetail(dateStr){
+  const history = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+  const d = history[dateStr];
+  if(!d) return;
+  const div = document.getElementById('histContent');
+  let html = `<button onclick="openHistoriek()" style="background:none;border:none;color:#0071e3;cursor:pointer;font-size:13px;padding:0 0 0.75rem">← Terug naar overzicht</button>`;
+  html += `<div style="font-size:15px;font-weight:600;margin-bottom:0.5rem">${d.label}</div>`;
+  html += '<div style="max-height:60vh;overflow-y:auto">';
+  d.klanten.forEach((k,i)=>{
+    const extraClass = k.extra?' extra':'';
+    const skipClass = k.skipped?' geannuleerd':'';
+    const extraBadge = k.extra?'<span style="font-size:9px;font-weight:700;color:#0071e3;text-transform:uppercase;margin-left:6px">Extra</span>':'';
+    const skipBadge = k.skipped?'<span style="font-size:9px;font-weight:700;color:#ff3b30;text-transform:uppercase;margin-left:6px">Geannuleerd</span>':'';
+    html+=`<div class="hist-detail-card${extraClass}${skipClass}">
+      <div style="display:flex;align-items:center;margin-bottom:2px">
+        <span style="width:18px;height:18px;border-radius:50%;background:#e5e5ea;font-size:9px;font-weight:600;text-align:center;line-height:18px;margin-right:6px;flex-shrink:0">${i+1}</span>
+        <span class="cname">${k.n}</span>${extraBadge}${skipBadge}
+      </div>
+      ${k.a?`<div class="caddr">📍 ${k.a}</div>`:''}
+      ${(k.c||[]).map(c=>`<div class="ccontact">📞 ${c}</div>`).join('')}
+      ${k.nt?`<div class="cnote" style="background:#e6f4e6;color:#1a6b1a">📌 ${k.nt}</div>`:''}
+      ${k.tempNote?`<div class="cnote" style="background:#fff3e0;color:#8b4500">⏰ ${k.tempNote}</div>`:''}
+    </div>`;
+  });
+  html += '</div>';
+  div.innerHTML = html;
+}
+
+function render(dateStr){
+  const out=document.getElementById('out'),dl=document.getElementById('dl');
+  if(!dateStr){dl.textContent='';out.innerHTML='<div class="empty">Kies een datum hierboven</div>';return;}
+  const r=getRoute(dateStr);
+  const d=new Date(dateStr+'T12:00:00');
+  const mn=['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+  const dn={maandag:'Maandag',dinsdag:'Dinsdag',woensdag:'Woensdag',donderdag:'Donderdag',vrijdag:'Vrijdag',zaterdag:'Zaterdag',zondag:'Zondag'};
+  currentLabel=dn[r.dag]+' · week '+r.wk+' ('+(r.even?'even':'oneven')+') · '+d.getDate()+' '+mn[d.getMonth()]+' '+d.getFullYear();
+  dl.textContent=currentLabel;
+  if(r.weekend){out.innerHTML='<div class="empty">Weekend — geen ritten gepland 🏠</div>';return;}
+  if(r.dag!=='woensdag')woensdagRit='A';
+  currentKlanten=[...r.klanten];currentWisselend=[...r.wisselend];currentKey=r.key;currentRouteKey=r.routeKey;
+
+  // Herstel opgeslagen wijzigingen voor deze datum
+  try {
+    const history = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+    const histKey = dateStr + (r.key ? '_' + r.key : '');
+    const saved = history[histKey];
+    if(saved && saved.klanten){
+      // Herstel skipped status van vaste klanten
+      saved.klanten.forEach(sk => {
+        if(sk.skipped){
+          const idx = currentKlanten.findIndex(k=>k.n===sk.n);
+          if(idx !== -1) currentKlanten[idx].skipped = true;
+        }
+      });
+      // Herstel extra toegevoegde klanten
+      const extraKlanten = saved.klanten.filter(k=>k.extra&&!k.skipped);
+      extraKlanten.forEach(ek => {
+        if(!currentKlanten.find(k=>k.n===ek.n)){
+          currentKlanten.push({...ek, extra:true});
+        }
+      });
+      // Herstel volgorde zoals opgeslagen
+      if(saved.klanten.length > 0){
+        const savedOrder = saved.klanten.map(k=>k.n);
+        currentKlanten.sort((a,b)=>{
+          const ia = savedOrder.indexOf(a.n);
+          const ib = savedOrder.indexOf(b.n);
+          if(ia===-1&&ib===-1)return 0;
+          if(ia===-1)return 1;
+          if(ib===-1)return -1;
+          return ia-ib;
+        });
+      }
+    }
+  } catch(e){ console.error('Herstel fout:', e); }
+
+  // Laad tijdelijke notities voor deze datum
+  try {
+    const tempNotes = JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}');
+    currentKlanten.forEach(k => {
+      const ritSuffix = currentKey ? '_' + currentKey : '';
+  const dayKey = dateStr + ritSuffix + '_' + k.n;
+      if(tempNotes[dayKey]) k.tempNote = tempNotes[dayKey];
+    });
+  } catch(e){}
+
+  // Laad actieve sporadische klanten voor deze dag
+  loadActieveKlanten(r.dag, r.key);
+
+  saveHistoriek();
+  // Toon voorbereiding indicator voor toekomstige datums
+  try {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const selected = new Date(dateStr+'T00:00:00');
+    const prepBadge = document.getElementById('prepBadge');
+    if(prepBadge) prepBadge.style.display = selected > today ? 'block' : 'none';
+  } catch(e){}
+  renderList();
+}
+
+const di=document.getElementById('di');
+const td=new Date();
+di.value=td.getFullYear()+'-'+String(td.getMonth()+1).padStart(2,'0')+'-'+String(td.getDate()).padStart(2,'0');
+di.addEventListener('change',()=>render(di.value));
+render(di.value);
+</script>
+</body>
+</html>
