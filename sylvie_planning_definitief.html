@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dagplanning Delmo</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- Firebase via REST API -->
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f7;color:#1d1d1f;font-size:15px}
@@ -40,6 +40,9 @@ a{color:inherit;text-decoration:none}
 .cnote-perm{font-size:12px;color:#1a6b1a;background:#e6f4e6;padding:3px 8px;border-radius:5px;margin-bottom:3px;display:inline-block}
 .cnote-temp{font-size:12px;color:#8b4500;background:#fff3e0;padding:3px 8px;border-radius:5px;margin-bottom:3px;display:inline-block}
 .note-btn{padding:4px 10px;font-size:11px;border:1px solid #34c759;border-radius:7px;background:transparent;color:#34c759;cursor:pointer}
+.sync-status{font-size:11px;padding:2px 8px;border-radius:10px;display:inline-block}
+.sync-ok{background:#e6f4e6;color:#1a6b1a}
+.sync-err{background:#fff3e0;color:#8b4500}
 .pos-label{font-size:10px;color:#34c759;font-weight:500}
 .arrow{text-align:center;color:#bbb;font-size:11px;padding:1px 0 1px 1rem}
 .empty{padding:2rem 1rem;text-align:center;color:#888;font-size:14px}
@@ -119,14 +122,28 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <div class="header">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
-  <h1 style="margin:0;font-size:19px;font-weight:600">🚐 Dagplanning Delmo</h1>
-  <span id="syncStatus" style="font-size:11px;color:#ff9500">🟡 laden...</span>
-</div>
+  <h1>🚐 Dagplanning Delmo</h1>
   <input type="date" id="di">
   <div class="dag-label" id="dl"></div>
 </div>
 <div id="out"></div>
+<!-- Modal: sync instellen -->
+<div class="modal-bg" id="modalSync">
+  <div class="modal">
+    <h2>🔗 Synchronisatie instellen</h2>
+    <p style="font-size:13px;color:#555;margin-bottom:1rem">Vul uw GitHub token in om synchronisatie tussen de 3 toestellen te activeren. De token wordt veilig bewaard op dit toestel.</p>
+    <label>GitHub Personal Access Token</label>
+    <input type="password" id="syncToken" placeholder="ghp_..." autocomplete="off">
+    <label style="margin-top:0.75rem">Sync Code <span style="font-size:11px;color:#888">(van collega, indien al aangemaakt)</span></label>
+    <input type="text" id="syncGistId" placeholder="Laat leeg als u de eerste bent">
+    <p style="font-size:11px;color:#888;margin-top:4px">Maak een token aan via github.com/settings/tokens (vink "gist" aan)</p>
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeModal('modalSync')">Annuleren</button>
+      <button class="ok" onclick="saveSyncToken()">Activeren ✓</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: notitie toevoegen -->
 <div class="modal-bg" id="modalNote">
   <div class="modal">
@@ -425,67 +442,26 @@ const DEFAULT_DB = {
   "Slagerij 't Dorp":{a:"Vrijheidsplein 4, 8930 Menen",c:[]},
 };
 
-// ===== FIREBASE SYNC via REST API =====
-const FIREBASE_URL = "https://delmo-planning2-default-rtdb.europe-west1.firebasedatabase.app";
+// ===== SYNC SYSTEEM =====
 let fbConnected = false;
-let _pollInterval = null;
+let _histSaveTimeout = null;
 
-function resetFirebase(){
-  if(!fbConnected){
-    alert('Geen verbinding met Firebase. Controleer uw internetverbinding.');
-    return;
-  }
-  const bevestig = confirm('⚠️ Weet u zeker dat u Firebase wilt resetten?\n\nDit wist alle opgeslagen wijzigingen in de cloud en laadt de basisgegevens opnieuw.\n\nDruk OK om te bevestigen.');
-  if(!bevestig) return;
-
-  updateSyncStatus('resetten...');
-  // Wis alle Firebase data via DELETE
-  fetch(FIREBASE_URL + '/.json', {method:'DELETE'})
-    .then(() => {
-      localStorage.removeItem('sylvie_db');
-      localStorage.removeItem('sylvie_actief');
-      localStorage.removeItem('sylvie_history');
-      localStorage.removeItem('sylvie_temp_notes');
-      DB = JSON.parse(JSON.stringify(DEFAULT_DB));
-      fbSet('db', DB);
-      updateSyncStatus('verbonden');
-      alert('✅ Firebase succesvol gereset!');
-      const dateStr = document.getElementById('di').value;
-      if(dateStr) render(dateStr);
-    }).catch(err => {
-      alert('❌ Reset mislukt: ' + err.message);
-    });
+function fbSet(path, data){ /* lokaal opslaan */ }
+function fbGet(path, cb){ cb(null); }
+function fbSaveHistory(){
+  clearTimeout(_histSaveTimeout);
+  _histSaveTimeout = setTimeout(()=>{
+    try{ const h=JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+    }catch(e){}
+  },500);
 }
+function fbSaveTempNotes(){}
 
-function initFirebase(){
-  updateSyncStatus('verbinding maken...');
-  // Test verbinding via REST
-  fetch(FIREBASE_URL + '/.json?shallow=true')
-    .then(r => {
-      if(r.ok){
-        fbConnected = true;
-        updateSyncStatus('verbonden');
-        syncFromFirebase();
-      } else {
-        fbConnected = false;
-        updateSyncStatus('offline');
-      }
-    })
-    .catch(e => {
-      fbConnected = false;
-      updateSyncStatus('offline');
-      console.error('Firebase init fout:', e);
-    });
-}
 
-function updateSyncStatus(msg){
-  const el = document.getElementById('syncStatus');
-  if(el) {
-    const connected = msg === 'verbonden';
-    el.textContent = connected ? '🟢 Gesynchroniseerd' : '🟡 ' + msg;
-    el.style.color = connected ? '#34c759' : '#ff9500';
-  }
-}
+
+
+
+function updateSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el){el.textContent="🟢 Lokaal opgeslagen";el.style.color="#34c759";} }
 
 function fbSet(path, data){
   if(!fbConnected) return;
@@ -504,58 +480,7 @@ function fbGet(path, callback){
     .catch(() => callback(null));
 }
 
-function syncFromFirebase(){
-  // Laad alle data van Firebase via REST
-  fetch(FIREBASE_URL + '/.json')
-    .then(r => r.json())
-    .then(data => {
-      if(!data) return;
-      if(data.db) DB = Object.assign({}, DEFAULT_DB, data.db);
-      if(data.actief) localStorage.setItem('sylvie_actief', JSON.stringify(data.actief));
-      if(data.temp_notes) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data.temp_notes));
-      if(data.wisselend){
-        Object.keys(data.wisselend).forEach(dag => {
-          if(!WISSELEND[dag]) WISSELEND[dag] = [];
-          data.wisselend[dag].forEach(naam => {
-            if(!WISSELEND[dag].includes(naam)) WISSELEND[dag].push(naam);
-          });
-        });
-      }
-      if(data.history){
-        try {
-          const localHistory = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-          const merged = Object.assign({}, data.history, localHistory);
-          localStorage.setItem('sylvie_history', JSON.stringify(merged));
-        } catch(e) {
-          localStorage.setItem('sylvie_history', JSON.stringify(data.history));
-        }
-      }
-      updateSyncStatus('verbonden');
-      const dateStr = document.getElementById('di').value;
-      if(dateStr) render(dateStr);
-    }).catch(e => {
-      console.error('Firebase sync fout:', e);
-      updateSyncStatus('offline');
-    });
 
-  // Poll elke 30 seconden voor updates van andere toestellen
-  if(_pollInterval) clearInterval(_pollInterval);
-  _pollInterval = setInterval(() => {
-    fetch(FIREBASE_URL + '/history.json')
-      .then(r => r.json())
-      .then(data => {
-        if(data){
-          const localHistory = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-          const merged = Object.assign({}, data, localHistory);
-          localStorage.setItem('sylvie_history', JSON.stringify(merged));
-        }
-      }).catch(() => {});
-    fetch(FIREBASE_URL + '/db.json')
-      .then(r => r.json())
-      .then(data => { if(data) DB = Object.assign({}, DEFAULT_DB, data); })
-      .catch(() => {});
-  }, 30000);
-}
 
 // Override saveDB to also save to Firebase
 const _origSaveDB = function(){
@@ -875,7 +800,7 @@ function renderList(){
     <button class="btn green" onclick="doPrint()">🖨️ Afdrukken</button>
     <button class="btn hist no-print" onclick="openHistoriek()">📋 Historiek</button>
     <button class="btn export no-print" onclick="exportHistoriek()">💾 Excel</button>
-    <button class="btn reset no-print" onclick="resetFirebase()">🔄 Reset Firebase</button>
+    <button class="btn no-print" id="syncBtn" style="background:#5856d6;border-color:#5856d6;color:#fff" onclick="openSyncModal()">🔗 Sync</button>
   </div>
   ${woensdagTabs}
   <div class="countbadge">${currentKlanten.length} stops${extra}${badge}</div>
@@ -1021,6 +946,225 @@ function saveNote(){
   closeModal('modalNote');
   renderList();
 }
+
+// DEEL VERWIJDERD
+function deelPlanningOud(){
+  try {
+    const data = {
+      db: DB,
+      actief: JSON.parse(localStorage.getItem('sylvie_actief')||'{}'),
+      history: JSON.parse(localStorage.getItem('sylvie_history')||'{}'),
+      temp_notes: JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}'),
+      wisselend_extra: {} // extra wisselende klanten
+    };
+    const json = JSON.stringify(data);
+    const code = btoa(unescape(encodeURIComponent(json)));
+    
+    // Kopieer naar klembord
+    navigator.clipboard.writeText(code).then(() => {
+      alert('✅ Planningsdata gekopieerd naar klembord!\n\nStuur deze code via WhatsApp of e-mail naar uw collega\'s.\nZij kunnen dan op "📥 Importeer" klikken en de code plakken.');
+    }).catch(() => {
+      // Fallback: toon in een textarea
+      const w = window.open('', '_blank', 'width=600,height=400');
+      w.document.write('<h3>Kopieer deze code en stuur naar collega</h3><textarea style="width:100%;height:300px">' + code + '</textarea>');
+    });
+  } catch(e) {
+    alert('Fout bij delen: ' + e.message);
+  }
+}
+
+function importeerPlanning(){
+  const code = prompt('Plak hier de code van uw collega:');
+  if(!code) return;
+  try {
+    const json = decodeURIComponent(escape(atob(code.trim())));
+    const data = JSON.parse(json);
+    
+    if(data.db){ DB = Object.assign({}, DEFAULT_DB, data.db); localStorage.setItem('sylvie_db', JSON.stringify(DB)); }
+    if(data.actief) localStorage.setItem('sylvie_actief', JSON.stringify(data.actief));
+    if(data.history){
+      const localH = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+      const merged = Object.assign({}, localH, data.history);
+      localStorage.setItem('sylvie_history', JSON.stringify(merged));
+    }
+    if(data.temp_notes) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data.temp_notes));
+    
+    alert('✅ Planning succesvol geïmporteerd!');
+    const dateStr = document.getElementById('di').value;
+    if(dateStr) render(dateStr);
+  } catch(e) {
+    alert('❌ Ongeldige code. Probeer opnieuw.');
+  }
+}
+
+// ===== GITHUB GIST SYNC =====
+const GIST_API = 'https://api.github.com/gists';
+
+function getSyncToken(){ return localStorage.getItem('delmo_sync_token')||''; }
+function getGistId(){ return localStorage.getItem('delmo_gist_id')||''; }
+
+function openSyncModal(){
+  document.getElementById('syncToken').value = getSyncToken() ? '••••••••••••••••' : '';
+  document.getElementById('modalSync').classList.add('open');
+}
+
+function saveSyncToken(){
+  const token = document.getElementById('syncToken').value.trim();
+  if(!token || token.startsWith('•')){ closeModal('modalSync'); return; }
+  if(!token.startsWith('ghp_') && !token.startsWith('github_pat_')){
+    alert('Ongeldige token. Token begint met ghp_ of github_pat_');
+    return;
+  }
+  localStorage.setItem('delmo_sync_token', token);
+  const gistId = document.getElementById('syncGistId').value.trim();
+  if(gistId) localStorage.setItem('delmo_gist_id', gistId);
+  closeModal('modalSync');
+  updateSyncBtn('verbinding maken...');
+  initGistSync();
+}
+
+function updateSyncBtn(status){
+  const btn = document.getElementById('syncBtn');
+  if(!btn) return;
+  if(status === 'ok'){
+    btn.textContent = '🟢 Sync';
+    btn.style.background = '#34c759';
+    btn.style.borderColor = '#34c759';
+  } else if(status === 'fout'){
+    btn.textContent = '🔴 Sync';
+    btn.style.background = '#ff3b30';
+    btn.style.borderColor = '#ff3b30';
+  } else {
+    btn.textContent = '🟡 ' + status;
+    btn.style.background = '#ff9500';
+    btn.style.borderColor = '#ff9500';
+  }
+}
+
+function gistHeaders(){
+  return {
+    'Authorization': 'token ' + getSyncToken(),
+    'Content-Type': 'application/json',
+    'Accept': 'application/vnd.github.v3+json'
+  };
+}
+
+function buildGistData(){
+  return {
+    db: DB,
+    actief: JSON.parse(localStorage.getItem('sylvie_actief')||'{}'),
+    history: JSON.parse(localStorage.getItem('sylvie_history')||'{}'),
+    temp_notes: JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}'),
+    wisselend_extra: JSON.parse(localStorage.getItem('sylvie_wisselend')||'{}'),
+    updated: new Date().toISOString()
+  };
+}
+
+function initGistSync(){
+  const token = getSyncToken();
+  if(!token) return;
+  
+  const gistId = getGistId();
+  if(gistId){
+    // Laad bestaande gist
+    loadFromGist();
+  } else {
+    // Maak nieuwe gist aan
+    createGist();
+  }
+}
+
+function createGist(){
+  const data = buildGistData();
+  fetch(GIST_API, {
+    method: 'POST',
+    headers: gistHeaders(),
+    body: JSON.stringify({
+      description: 'Delmo Planning Sync',
+      public: false,
+      files: { 'delmo_planning.json': { content: JSON.stringify(data, null, 2) } }
+    })
+  })
+  .then(r => r.json())
+  .then(gist => {
+    if(gist.id){
+      localStorage.setItem('delmo_gist_id', gist.id);
+      updateSyncBtn('ok');
+      alert('✅ Synchronisatie geactiveerd!\n\nGeef deze code aan uw collega\'s zodat zij ook kunnen synchroniseren:\n\n' + gist.id + '\n\nZij kunnen dit invullen via de 🔗 Sync knop.');
+      startSyncPolling();
+    } else {
+      updateSyncBtn('fout');
+      alert('❌ Fout bij aanmaken: ' + JSON.stringify(gist.message));
+    }
+  })
+  .catch(e => { updateSyncBtn('fout'); console.error(e); });
+}
+
+function saveToGist(){
+  const token = getSyncToken();
+  const gistId = getGistId();
+  if(!token || !gistId) return;
+  
+  const data = buildGistData();
+  fetch(GIST_API + '/' + gistId, {
+    method: 'PATCH',
+    headers: gistHeaders(),
+    body: JSON.stringify({
+      files: { 'delmo_planning.json': { content: JSON.stringify(data, null, 2) } }
+    })
+  })
+  .then(r => { if(r.ok) updateSyncBtn('ok'); else updateSyncBtn('fout'); })
+  .catch(() => updateSyncBtn('fout'));
+}
+
+function loadFromGist(){
+  const token = getSyncToken();
+  const gistId = getGistId();
+  if(!token || !gistId) return;
+  
+  fetch(GIST_API + '/' + gistId, { headers: gistHeaders() })
+  .then(r => r.json())
+  .then(gist => {
+    if(!gist.files || !gist.files['delmo_planning.json']){
+      updateSyncBtn('fout'); return;
+    }
+    const data = JSON.parse(gist.files['delmo_planning.json'].content);
+    // Merge data
+    if(data.db) DB = Object.assign({}, DEFAULT_DB, data.db);
+    if(data.actief) localStorage.setItem('sylvie_actief', JSON.stringify(data.actief));
+    if(data.temp_notes) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data.temp_notes));
+    if(data.history){
+      const local = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+      const merged = Object.assign({}, data.history, local);
+      localStorage.setItem('sylvie_history', JSON.stringify(merged));
+    }
+    updateSyncBtn('ok');
+    const dateStr = document.getElementById('di').value;
+    if(dateStr) render(dateStr);
+    startSyncPolling();
+  })
+  .catch(e => { updateSyncBtn('fout'); console.error(e); });
+}
+
+let _syncPollInterval = null;
+function startSyncPolling(){
+  if(_syncPollInterval) clearInterval(_syncPollInterval);
+  // Poll elke 60 seconden
+  _syncPollInterval = setInterval(loadFromGist, 60000);
+}
+
+function fbSaveHistory(){
+  clearTimeout(window._histSaveTimeout);
+  window._histSaveTimeout = setTimeout(() => {
+    try {
+      const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+      saveToGist();
+    } catch(e){}
+  }, 2000);
+}
+
+function fbSaveTempNotes(){ saveToGist(); }
+function fbSet(path, data){ saveToGist(); }
 
 function saveHistoriek(){
   if(!currentKlanten.length) return;
