@@ -446,16 +446,9 @@ const DEFAULT_DB = {
 let fbConnected = false;
 let _histSaveTimeout = null;
 
-function fbSet(path, data){ /* lokaal opslaan */ }
+// noop3 verwijderd
 function fbGet(path, cb){ cb(null); }
-function fbSaveHistory(){
-  clearTimeout(_histSaveTimeout);
-  _histSaveTimeout = setTimeout(()=>{
-    try{ const h=JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-    }catch(e){}
-  },500);
-}
-function fbSaveTempNotes(){}
+
 
 
 
@@ -463,22 +456,7 @@ function fbSaveTempNotes(){}
 
 function updateSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el){el.textContent="🟢 Lokaal opgeslagen";el.style.color="#34c759";} }
 
-function fbSet(path, data){
-  if(!fbConnected) return;
-  fetch(FIREBASE_URL + '/' + path + '.json', {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(data)
-  }).catch(e => console.error('Firebase set fout:', e));
-}
-
-function fbGet(path, callback){
-  if(!fbConnected){ callback(null); return; }
-  fetch(FIREBASE_URL + '/' + path + '.json')
-    .then(r => r.json())
-    .then(data => callback(data))
-    .catch(() => callback(null));
-}
+// REST functies verwijderd
 
 
 
@@ -496,22 +474,9 @@ const _origSaveActief = function(data){
 
 // Override saveHistoriek later (after it's defined)
 let _histSaveTimeout = null;
-function fbSaveHistory(){
-  clearTimeout(_histSaveTimeout);
-  _histSaveTimeout = setTimeout(() => {
-    try {
-      const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-      if(fbConnected) fbSet('history', h);
-    } catch(e) {}
-  }, 500);
-}
+// fbSaveHistory verwijderd
 
-function fbSaveTempNotes(){
-  try {
-    const t = JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}');
-    fbSet('temp_notes', t);
-  } catch(e) {}
-}
+
 
 let DB=JSON.parse(JSON.stringify(DEFAULT_DB));
 function loadSavedDB(){try{const s=localStorage.getItem('sylvie_db');if(s)DB=Object.assign({},DEFAULT_DB,JSON.parse(s));}catch(e){}}
@@ -947,31 +912,7 @@ function saveNote(){
   renderList();
 }
 
-// DEEL VERWIJDERD
-function deelPlanningOud(){
-  try {
-    const data = {
-      db: DB,
-      actief: JSON.parse(localStorage.getItem('sylvie_actief')||'{}'),
-      history: JSON.parse(localStorage.getItem('sylvie_history')||'{}'),
-      temp_notes: JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}'),
-      wisselend_extra: {} // extra wisselende klanten
-    };
-    const json = JSON.stringify(data);
-    const code = btoa(unescape(encodeURIComponent(json)));
-    
-    // Kopieer naar klembord
-    navigator.clipboard.writeText(code).then(() => {
-      alert('✅ Planningsdata gekopieerd naar klembord!\n\nStuur deze code via WhatsApp of e-mail naar uw collega\'s.\nZij kunnen dan op "📥 Importeer" klikken en de code plakken.');
-    }).catch(() => {
-      // Fallback: toon in een textarea
-      const w = window.open('', '_blank', 'width=600,height=400');
-      w.document.write('<h3>Kopieer deze code en stuur naar collega</h3><textarea style="width:100%;height:300px">' + code + '</textarea>');
-    });
-  } catch(e) {
-    alert('Fout bij delen: ' + e.message);
-  }
-}
+
 
 function importeerPlanning(){
   const code = prompt('Plak hier de code van uw collega:');
@@ -1154,8 +1095,8 @@ function startSyncPolling(){
 }
 
 function fbSaveHistory(){
-  clearTimeout(window._histSaveTimeout);
-  window._histSaveTimeout = setTimeout(() => {
+  clearTimeout(_histSaveTimeout);
+  _histSaveTimeout = setTimeout(() => {
     try {
       const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
       saveToGist();
