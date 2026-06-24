@@ -444,8 +444,6 @@ const DEFAULT_DB = {
 
 // ===== SYNC SYSTEEM =====
 let fbConnected = false;
-let _histSaveTimeout = null;
-
 // noop3 verwijderd
 function fbGet(path, cb){ cb(null); }
 
@@ -473,7 +471,6 @@ const _origSaveActief = function(data){
 };
 
 // Override saveHistoriek later (after it's defined)
-let _histSaveTimeout = null;
 // fbSaveHistory verwijderd
 
 
@@ -939,6 +936,7 @@ function importeerPlanning(){
 }
 
 // ===== GITHUB GIST SYNC =====
+let _histSaveTimeout = null;
 const GIST_API = 'https://api.github.com/gists';
 
 function getSyncToken(){ return localStorage.getItem('delmo_sync_token')||''; }
