@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dagplanning Delmo</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f7;color:#1d1d1f;font-size:15px}
@@ -40,9 +41,6 @@ a{color:inherit;text-decoration:none}
 .cnote-perm{font-size:12px;color:#1a6b1a;background:#e6f4e6;padding:3px 8px;border-radius:5px;margin-bottom:3px;display:inline-block}
 .cnote-temp{font-size:12px;color:#8b4500;background:#fff3e0;padding:3px 8px;border-radius:5px;margin-bottom:3px;display:inline-block}
 .note-btn{padding:4px 10px;font-size:11px;border:1px solid #34c759;border-radius:7px;background:transparent;color:#34c759;cursor:pointer}
-.sync-status{font-size:11px;padding:2px 8px;border-radius:10px;display:inline-block}
-.sync-ok{background:#e6f4e6;color:#1a6b1a}
-.sync-err{background:#fff3e0;color:#8b4500}
 .pos-label{font-size:10px;color:#34c759;font-weight:500}
 .arrow{text-align:center;color:#bbb;font-size:11px;padding:1px 0 1px 1rem}
 .empty{padding:2rem 1rem;text-align:center;color:#888;font-size:14px}
@@ -122,28 +120,14 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <div class="header">
-  <h1>🚐 Dagplanning Delmo</h1>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+  <h1 style="margin:0;font-size:19px;font-weight:600">🚐 Dagplanning Delmo</h1>
+  <span id="syncStatus" style="font-size:11px;color:#ff9500">🟡 laden...</span>
+</div>
   <input type="date" id="di">
   <div class="dag-label" id="dl"></div>
 </div>
 <div id="out"></div>
-<!-- Modal: sync instellen -->
-<div class="modal-bg" id="modalSync">
-  <div class="modal">
-    <h2>🔗 Synchronisatie instellen</h2>
-    <p style="font-size:13px;color:#555;margin-bottom:1rem">Vul uw GitHub token in om synchronisatie tussen de 3 toestellen te activeren. De token wordt veilig bewaard op dit toestel.</p>
-    <label>GitHub Personal Access Token</label>
-    <input type="password" id="syncToken" placeholder="ghp_..." autocomplete="off">
-    <label style="margin-top:0.75rem">Sync Code <span style="font-size:11px;color:#888">(van collega, indien al aangemaakt)</span></label>
-    <input type="text" id="syncGistId" placeholder="Laat leeg als u de eerste bent">
-    <p style="font-size:11px;color:#888;margin-top:4px">Maak een token aan via github.com/settings/tokens (vink "gist" aan)</p>
-    <div class="modal-btns">
-      <button class="cancel" onclick="closeModal('modalSync')">Annuleren</button>
-      <button class="ok" onclick="saveSyncToken()">Activeren ✓</button>
-    </div>
-  </div>
-</div>
-
 <!-- Modal: notitie toevoegen -->
 <div class="modal-bg" id="modalNote">
   <div class="modal">
@@ -187,6 +171,13 @@ a{color:inherit;text-decoration:none}
     <label>Positie in de rit</label>
     <div class="suggestion-box" id="suggestionBox"></div>
     <select id="mPos"></select>
+    <div style="margin-top:0.5rem;padding:0.5rem;background:#e6f4e6;border-radius:8px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;cursor:pointer">
+        <input type="checkbox" id="mSavePos" checked style="width:16px;height:16px">
+        📌 Bewaar positie voor volgende keren
+      </label>
+      <div style="font-size:11px;color:#555;margin-top:4px;margin-left:24px">Klant verschijnt automatisch op de juiste plek in toekomstige ritten</div>
+    </div>
     <div class="modal-btns">
       <button class="cancel" onclick="closeModal('modalAdd')">Annuleren</button>
       <button class="ok" onclick="addKlant()">Toevoegen ✓</button>
@@ -204,7 +195,7 @@ a{color:inherit;text-decoration:none}
     <div id="eTelList"></div>
     <button class="add-contact-btn" onclick="addTelField('eTelList')">+ Telefoonnummer toevoegen</button>
     <div style="margin-top:0.75rem;padding:0.6rem;background:#fff8e6;border-radius:8px;border:1px solid #ff9500">
-      <div style="font-size:12px;color:#cc7000;font-weight:600">💾 Wijzigingen worden opgeslagen in de browser</div>
+      <div style="font-size:12px;color:#cc7000;font-weight:600">☁️ Wijzigingen worden automatisch gesynchroniseerd voor alle gebruikers</div>
     </div>
     <div class="modal-btns">
       <button class="cancel" onclick="closeModal('modalEdit')">Annuleren</button>
@@ -213,10 +204,48 @@ a{color:inherit;text-decoration:none}
   </div>
 </div>
 
+<!-- Modal: wisselende klant aanpassen (adres/telefoon/notitie + positie) -->
+<div class="modal-bg" id="modalWisselEdit">
+  <div class="modal">
+    <h2>Wisselende klant aanpassen</h2>
+    <div id="wNaamDisplay" style="font-size:15px;font-weight:600;color:#1E4D8C;margin-bottom:0.5rem"></div>
+    <label>Adres</label><input type="text" id="wAdres">
+    <label>Notitie / code</label><input type="text" id="wNote">
+    <label>Telefoonnummer(s)</label>
+    <div id="wTelList"></div>
+    <button class="add-contact-btn" onclick="addTelField('wTelList')">+ Telefoonnummer toevoegen</button>
+    <label>Positie in de rit (voor deze dag/week)</label>
+    <select id="wPos"></select>
+    <label>Terugkerend patroon (optioneel — voor klanten die niet elke week komen)</label>
+    <select id="wCycleMode" onchange="toggleCycleFields()">
+      <option value="">Geen — komt elke keer voor als toegevoegd</option>
+      <option value="aanwezig">Aanwezig op onderstaande datum, en daarna om de zoveel weken</option>
+      <option value="afwezig">Afwezig op onderstaande datum, en daarna om de zoveel weken (wél aanwezig op de tussenliggende weken)</option>
+    </select>
+    <div id="wCycleFields" style="display:none">
+      <label>Interval</label>
+      <select id="wInterval">
+        <option value="2">Om de 2 weken</option>
+        <option value="3">Om de 3 weken</option>
+        <option value="4">Om de 4 weken</option>
+      </select>
+      <label>Referentiedatum</label>
+      <input type="date" id="wAnchorDate">
+    </div>
+    <div style="margin-top:0.75rem;padding:0.6rem;background:#fff8e6;border-radius:8px;border:1px solid #ff9500">
+      <div style="font-size:12px;color:#cc7000;font-weight:600">☁️ Wijzigingen worden automatisch gesynchroniseerd voor alle gebruikers</div>
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeModal('modalWisselEdit')">Annuleren</button>
+      <button class="ok" onclick="saveWisselEdit()">Opslaan ✓</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // Vaste geografische posities per wisselende klant per route
 // Waarde = naam van stop NA wie ingevoegd wordt, null = vooraan
-const POSITIONS = {
+const DEFAULT_POSITIONS = {
   'Amando':              { maandag_oneven: 'Vlevy', maandag_even: 'Vlevy' },
   'Breughel Food':       { maandag_oneven: 'Q-Food', maandag_even: 'Q-Food' },
   'Signature foods Belgium': { maandag_oneven: 'Beltaste', maandag_even: 'Beltaste' },
@@ -248,15 +277,15 @@ const POSITIONS = {
   'Hanssens Catering':   { woensdag_a: 'Calibra' },
   'Calibra':             { woensdag_a: 'Volys' },
   'Beenhouwer Decupere': { woensdag_a: 'Covameat' },
-  'Dejaeghere':          { woensdag_a: 'Covameat' },
-  'Pasfrost':            { woensdag_a: 'Dejaeghere' },
+  'Pasfrost':            { woensdag_a: 'Covameat' },
+  'Dejaeghere':          { woensdag_a: 'Pasfrost' },
   'Westfro':             { woensdag_a: 'Agrifreez' },
   'Agrifreez':           { woensdag_a: 'Greenyard Foods' },
   'Seracraft':           { woensdag_a: 'Lavameat' },
   'Koen en Veerle bvba': { woensdag_a: 'Lavameat' },
   "D'Arta":              { woensdag_a: 'Vleeswaren Hava' },
   'Bert Maes':           { woensdag_a: "D'Arta" },
-  'Markey':              { woensdag_a: 'Covameat' },
+  'Markey':              { woensdag_a: 'Dejaeghere' },
   'Detremmerie':         { woensdag_b_even: null, woensdag_b_oneven: null },
   'Euromeat':            { woensdag_b_even: 'Vlevia', woensdag_b_oneven: 'Vlevia' },
   'Campens':             { woensdag_b_even: 'Ecoclavis', woensdag_b_oneven: 'Plukon' },
@@ -282,12 +311,26 @@ const POSITIONS = {
   'Sanpareil':           { vrijdag_oneven: 'Transmeat', vrijdag_even: 'Transmeat' },
   'Ceulemans':           { vrijdag_oneven: 'Sanpareil', vrijdag_even: 'Sanpareil' },
   'Agape':               { vrijdag_oneven: 'Luka', vrijdag_even: 'Luka' },
-  'Straetmans':          { vrijdag_oneven: 'Viangros', vrijdag_even: 'Viangros' },
+  'Straetmans':          { vrijdag_oneven: 'Vlevico/colruyt', vrijdag_even: 'Vlevico/colruyt' },
   'Bevica':              { vrijdag_oneven: 'Goeminne Slagerij', vrijdag_even: 'Goeminne Slagerij' },
   'Alero Topdog':        { vrijdag_oneven: 'Melior', vrijdag_even: 'Melior' },
   'Chantal Laevens':     { vrijdag_oneven: 'Melior', vrijdag_even: 'Melior' },
   'Intersalami':         { vrijdag_oneven: 'Melior', vrijdag_even: 'Melior' },
 };
+
+let POSITIONS = JSON.parse(JSON.stringify(DEFAULT_POSITIONS));
+function loadSavedPositions(){try{const s=localStorage.getItem('sylvie_positions');if(s)POSITIONS=Object.assign({},DEFAULT_POSITIONS,JSON.parse(s));}catch(e){}}
+function savePositions(){try{localStorage.setItem('sylvie_positions',JSON.stringify(POSITIONS));}catch(e){} fbSet('positions',fbEncodeObjKeys(POSITIONS));}
+function savePositionsEntry(naam){try{localStorage.setItem('sylvie_positions',JSON.stringify(POSITIONS));}catch(e){} fbSetEntry('positions',naam,POSITIONS[naam]);}
+loadSavedPositions();
+
+// Opkuis: Straetmans komt op vrijdag NA Vlevico/colruyt
+function cleanupPositions(){
+  const p=POSITIONS['Straetmans'];let changed=false;
+  if(p){['vrijdag_oneven','vrijdag_even'].forEach(k=>{if(p[k]!=='Vlevico/colruyt'){p[k]='Vlevico/colruyt';changed=true;}});}
+  return changed;
+}
+if(cleanupPositions()){try{localStorage.setItem('sylvie_positions',JSON.stringify(POSITIONS));}catch(e){}}
 
 function getSuggestedPos(naam, routeKey, klanten) {
   const pos = POSITIONS[naam];
@@ -344,7 +387,7 @@ const DEFAULT_DB = {
   "Volys":{a:"Oudstrijderslaan 11, 8860 Lendelede",c:["Amina Deven: +32 51 33 50 43"],nt:"Badge: 8888"},
   "Covameat":{a:"Komenstraat 73, 8953 Heuvelland",c:["Chantal Room: +32 51 78 84 00"]},
   "Markey":{a:"Klerkenstraat 139b, 8920 Langemark-Poelkapelle",c:[],nt:"Grijs bakje"},
-  "Colli service":{a:"Westvlees, Ommegang West 9, 8840 Staden",c:["107 – Jacob: 0495 29 88 86","107 – Casper: 0498 16 83 37","111 – Jonas of Birger (niet Yves)","103 – Karel: 0491/05 75 62 (15 min op voorhand bellen)","103 – 0499/64 54 20","103 – Ronny Peirs: 0473/89 78 38","103 – Davy Buysse: 0499/51 66 90","103 – 0499/69 42 91"],nt:"Nancy Cardon: 0497/415430"},
+  "Colli service":{a:"Westvlees, Ommegang West 9, 8840 Staden",c:["107 – Jacob: 0495 29 88 86","107 – Casper: 0498 16 83 37","103 – Karel: 0491/05 75 62 (15 min op voorhand bellen)","103 – 0499/64 54 20","103 – Ronny Peirs: 0473/89 78 38","103 – Davy Buysse: 0499/51 66 90","103 – 0499/69 42 91"],nt:"Nancy Cardon: 0497/415430"},
   "Greenyard Foods":{a:"Romenstraat 2, 8840 Staden",c:["David Dewulf: 051 78 82 00"],nt:"Fluo hesje aandoen"},
   "t spoor":{a:"Zandputstraat 17, 8930 Menen",c:[]},
   "Noyez":{a:"Menensesteenweg 232, 8940 Wervik",c:["Joris: +32 56 31 14 54"]},
@@ -442,29 +485,239 @@ const DEFAULT_DB = {
   "Slagerij 't Dorp":{a:"Vrijheidsplein 4, 8930 Menen",c:[]},
 };
 
-// ===== SYNC SYSTEEM =====
-let fbConnected = false;
-// noop3 verwijderd
+// ===== FIREBASE SYNC =====
+const FIREBASE_URL = "https://delmo-planning2-default-rtdb.europe-west1.firebasedatabase.app";
+const FB_CONFIG = { databaseURL: FIREBASE_URL };
+// Geheime pad-sleutel: alle data staat in Firebase onder dit pad. De Firebase Rules staan
+// enkel lezen/schrijven toe onder dit exacte pad (zie DB_SECRET in de Rules) - alle andere
+// paden (incl. de root) zijn afgesloten. Wijzig dit NIET zonder ook de Rules in de Firebase
+// console aan te passen, anders werkt de synchronisatie niet meer.
+const DB_SECRET = "84a25d7c98db89657c21ab5480d3db02b7ebb963";
+function fbPath(path){ return path ? (DB_SECRET + '/' + path) : DB_SECRET; }
+let fbApp, fbDb, fbConnected = false;
 
+function resetFirebase(){
+  if(!fbConnected || !fbDb){
+    alert('Geen verbinding met Firebase. Controleer uw internetverbinding.');
+    return;
+  }
+  const bevestig = confirm('⚠️ Weet u zeker dat u Firebase wilt resetten?\n\nDit wist alle opgeslagen wijzigingen in de cloud (notities, extra klanten, historiek) en laadt de basisgegevens opnieuw.\n\nDruk OK om te bevestigen.');
+  if(!bevestig) return;
 
+  updateSyncStatus('resetten...');
+  // Wis alle Firebase data (enkel onder ons geheime pad)
+  fbDb.ref(fbPath()).remove().then(() => {
+    // Reset lokale opslag ook
+    localStorage.removeItem('sylvie_db');
+    localStorage.removeItem('sylvie_actief');
+    localStorage.removeItem('sylvie_history');
+    localStorage.removeItem('sylvie_temp_notes');
+    localStorage.removeItem('sylvie_positions');
+    localStorage.removeItem('sylvie_cycles');
+    localStorage.removeItem('sylvie_wisselend');
+    // Herlaad DEFAULT_DB, DEFAULT_POSITIONS, DEFAULT_CYCLES en DEFAULT_WISSELEND naar Firebase
+    DB = JSON.parse(JSON.stringify(DEFAULT_DB));
+    POSITIONS = JSON.parse(JSON.stringify(DEFAULT_POSITIONS));
+    CYCLES = JSON.parse(JSON.stringify(DEFAULT_CYCLES));
+    WISSELEND = JSON.parse(JSON.stringify(DEFAULT_WISSELEND));
+    fbSet('db', fbEncodeObjKeys(DB));
+    fbSet('positions', fbEncodeObjKeys(POSITIONS));
+    fbSet('cycles', fbEncodeObjKeys(CYCLES));
+    fbSet('wisselend', WISSELEND);
+    updateSyncStatus('verbonden');
+    alert('✅ Firebase succesvol gereset! De basisgegevens zijn opnieuw ingeladen.');
+    // Re-render
+    const dateStr = document.getElementById('di').value;
+    if(dateStr) render(dateStr);
+  }).catch(err => {
+    alert('❌ Reset mislukt: ' + err.message);
+    updateSyncStatus('fout bij reset');
+  });
+}
 
+initFirebase(); // start de cloud-synchronisatie effectief op
+function initFirebase(){
+  try {
+    fbApp = firebase.initializeApp(FB_CONFIG);
+    fbDb = firebase.database();
+    fbConnected = true;
+    updateSyncStatus('verbinding maken...');
+    // Listen for connection state
+    fbDb.ref('.info/connected').on('value', snap => {
+      if(snap.val()) {
+        updateSyncStatus('verbonden');
+        syncFromFirebase();
+      } else {
+        updateSyncStatus('offline - lokaal opslaan');
+      }
+    });
+  } catch(e) {
+    console.error('Firebase init fout:', e);
+    fbConnected = false;
+    updateSyncStatus('offline');
+  }
+}
 
+function updateSyncStatus(msg){
+  const el = document.getElementById('syncStatus');
+  if(el) {
+    const connected = msg === 'verbonden';
+    el.textContent = connected ? '🟢 Gesynchroniseerd' : '🟡 ' + msg;
+    el.style.color = connected ? '#34c759' : '#ff9500';
+  }
+}
 
+function fbSet(path, data){
+  if(!fbConnected || !fbDb) return;
+  try { fbDb.ref(fbPath(path)).set(data); } catch(e) { console.error('Firebase set fout:', e); }
+}
 
-function updateSyncStatus(msg){ const el=document.getElementById("syncStatus"); if(el){el.textContent="🟢 Lokaal opgeslagen";el.style.color="#34c759";} }
+// Firebase Realtime Database-sleutels mogen geen '.', '#', '$', '/', '[' of ']' bevatten.
+// Klantnamen kunnen die tekens wel bevatten (bv. "De Cock / Casadoro"), dus we coderen/decoderen sleutels veilig.
+function fbEncodeKey(naam){
+  return String(naam).replace(/%/g,'%25').replace(/\./g,'%2E').replace(/#/g,'%23').replace(/\$/g,'%24').replace(/\[/g,'%5B').replace(/\]/g,'%5D').replace(/\//g,'%2F');
+}
+function fbDecodeKey(key){
+  return String(key).replace(/%2F/g,'/').replace(/%5D/g,']').replace(/%5B/g,'[').replace(/%24/g,'$').replace(/%23/g,'#').replace(/%2E/g,'.').replace(/%25/g,'%');
+}
+function fbEncodeObjKeys(obj){
+  const out={};
+  Object.keys(obj||{}).forEach(k=>{ out[fbEncodeKey(k)] = obj[k]; });
+  return out;
+}
+function fbDecodeObjKeys(obj){
+  const out={};
+  Object.keys(obj||{}).forEach(k=>{ out[fbDecodeKey(k)] = obj[k]; });
+  return out;
+}
+// Slaat één klant-sleutel veilig op onder een pad (bv. 'db', 'positions', 'cycles') zonder de rest van het pad te overschrijven
+function fbSetEntry(basePath, naam, data){
+  if(!fbConnected || !fbDb) return;
+  try {
+    if(data === undefined || data === null){ fbDb.ref(fbPath(basePath+'/'+fbEncodeKey(naam))).remove(); }
+    else { fbDb.ref(fbPath(basePath+'/'+fbEncodeKey(naam))).set(data); }
+  } catch(e) { console.error('Firebase entry-set fout:', e); }
+}
 
-// REST functies verwijderd
+function fbGet(path, callback){
+  if(!fbConnected || !fbDb) { callback(null); return; }
+  try { fbDb.ref(fbPath(path)).once('value').then(s => callback(s.val())).catch(() => callback(null)); } catch(e) { callback(null); }
+}
 
+function syncFromFirebase(){
+  // Real-time listener voor DB
+  fbDb.ref(fbPath('db')).on('value', snap => {
+    const data = snap.val();
+    if(data){ DB = Object.assign({}, DEFAULT_DB, fbDecodeObjKeys(data)); if(cleanupDB()) saveDBEntry('Colli service'); }
+  });
 
+  // Real-time listener voor actieve klanten
+  fbDb.ref(fbPath('actief')).on('value', snap => {
+    const data = snap.val();
+    if(data) localStorage.setItem('sylvie_actief', JSON.stringify(data));
+  });
 
-// Oude Firebase overrides verwijderd
+  // Real-time listener voor historiek - meest belangrijk!
+  fbDb.ref(fbPath('history')).on('value', snap => {
+    const data = snap.val();
+    if(data){
+      localStorage.setItem('sylvie_history', JSON.stringify(data));
+      updateSyncStatus('verbonden');
+    }
+  });
 
+  // Real-time listener voor temp notes
+  fbDb.ref(fbPath('temp_notes')).on('value', snap => {
+    const data = snap.val();
+    if(data) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data));
+  });
 
+  // Real-time listener voor posities van wisselende klanten
+  fbDb.ref(fbPath('positions')).on('value', snap => {
+    const data = snap.val();
+    if(data){
+      POSITIONS = Object.assign({}, DEFAULT_POSITIONS, fbDecodeObjKeys(data));
+      if(cleanupPositions()) savePositionsEntry('Straetmans');
+      const dateStr = document.getElementById('di').value;
+      if(dateStr) render(dateStr);
+    }
+  });
+
+  // Real-time listener voor cyclische (niet-wekelijkse) klanten
+  fbDb.ref(fbPath('cycles')).on('value', snap => {
+    const data = snap.val();
+    if(data){
+      CYCLES = Object.assign({}, DEFAULT_CYCLES, fbDecodeObjKeys(data));
+      const dateStr = document.getElementById('di').value;
+      if(dateStr) render(dateStr);
+    }
+  });
+
+  // Real-time listener voor de lijst met wisselende klanten per dag/route
+  fbDb.ref(fbPath('wisselend')).on('value', snap => {
+    const data = snap.val();
+    if(data){
+      WISSELEND = Object.assign({}, DEFAULT_WISSELEND, data);
+      const dateStr = document.getElementById('di').value;
+      if(dateStr) render(dateStr);
+    }
+  });
+
+  // Initieel laden en re-render
+  fbDb.ref(fbPath('history')).once('value', snap => {
+    const data = snap.val();
+    if(data) localStorage.setItem('sylvie_history', JSON.stringify(data));
+    const dateStr = document.getElementById('di').value;
+    if(dateStr) render(dateStr);
+  });
+}
+
+// Override saveDB to also save to Firebase
+const _origSaveDB = function(){
+  try{ localStorage.setItem('sylvie_db', JSON.stringify(DB)); }catch(e){}
+  fbSet('db', DB);
+};
+
+// Override saveActieveKlanten
+const _origSaveActief = function(data){
+  try{ localStorage.setItem('sylvie_actief', JSON.stringify(data)); }catch(e){}
+  fbSet('actief', data);
+};
+
+// Override saveHistoriek later (after it's defined)
+let _histSaveTimeout = null;
+function fbSaveHistory(){
+  clearTimeout(_histSaveTimeout);
+  _histSaveTimeout = setTimeout(() => {
+    try {
+      const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
+      fbSet('history', h);
+    } catch(e) {}
+  }, 500); // debounce 0.5s
+}
+
+function fbSaveTempNotes(){
+  try {
+    const t = JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}');
+    fbSet('temp_notes', t);
+  } catch(e) {}
+}
 
 let DB=JSON.parse(JSON.stringify(DEFAULT_DB));
 function loadSavedDB(){try{const s=localStorage.getItem('sylvie_db');if(s)DB=Object.assign({},DEFAULT_DB,JSON.parse(s));}catch(e){}}
-function saveDB(){try{localStorage.setItem('sylvie_db',JSON.stringify(DB));}catch(e){} fbSet('db',DB);}
+function saveDB(){try{localStorage.setItem('sylvie_db',JSON.stringify(DB));}catch(e){} fbSet('db',fbEncodeObjKeys(DB));}
+function saveDBEntry(naam){try{localStorage.setItem('sylvie_db',JSON.stringify(DB));}catch(e){} fbSetEntry('db',naam,DB[naam]);}
+// Opkuis: Jonas en Birger werken niet meer bij Westvlees (Colli service)
+function cleanupDB(){
+  const k=DB['Colli service'];
+  if(k&&Array.isArray(k.c)){
+    const nieuw=k.c.filter(t=>!/Jonas of Birger/i.test(t));
+    if(nieuw.length!==k.c.length){ DB['Colli service']={...k,c:nieuw}; return true; }
+  }
+  return false;
+}
 loadSavedDB();
+if(cleanupDB()){try{localStorage.setItem('sylvie_db',JSON.stringify(DB));}catch(e){}}
 function getInfo(n){return DB[n]||{a:'',c:[],nt:''};}
 
 const DEPOT={n:"Vertrek / Depot",a:"Noorwegenstraat 29 D, 9940 Evergem",depot:true};
@@ -483,7 +736,7 @@ const ROUTES={
   vrijdag_even:['De Keyser Aartselaar','Menken','Viangros','Vlevico/colruyt','Charling','EJ Foods','Teugels','Belki','Melior','Cornby'],
 };
 
-const WISSELEND={
+const DEFAULT_WISSELEND={
   maandag:['Amando','Van Bogaert bvba','Breughel Food','Signature foods Belgium'],
   dinsdag:['Verstraete','Slachthuis De Coster','Dujardin','Bernard Stevens','Den Huilaert','Vannieuwenhuyze','Spegelaere','Hotelschool ter Duinen','AZ WEST','Hanssens Oostende','Mahu Meat','Limousin'],
   woensdag_a:['Chicken Masters',"Slagerij 't Dorp",'Slagerij Robby en Angelique','Culinaire Slagerij','Hanssens Catering','Calibra','Crombez','Roussel Onions','Beenhouwer Decupere','Pasfrost','Dejaeghere','Markey','Agrifreez','Westfro','Seracraft','Koen en Veerle bvba','Vleeswaren Hava',"D'Arta",'Bert Maes','Polca','Delavi Nv','Export Tielt','Slachthuis De Coster','D&D Aalter'],
@@ -491,6 +744,37 @@ const WISSELEND={
   donderdag:['Goldmeat','Buvens','Tops Foods','Halal','Legon','BKS','Marcotty'],
   vrijdag:['Goeminne Slagerij','Sanpareil','Ceulemans','Agape','Transmeat','Straetmans','Bevica','Alero Topdog','Chantal Laevens','Intersalami'],
 };
+let WISSELEND = JSON.parse(JSON.stringify(DEFAULT_WISSELEND));
+function loadSavedWisselend(){try{const s=localStorage.getItem('sylvie_wisselend');if(s)WISSELEND=Object.assign({},DEFAULT_WISSELEND,JSON.parse(s));}catch(e){}}
+function saveWisselend(){try{localStorage.setItem('sylvie_wisselend',JSON.stringify(WISSELEND));}catch(e){} fbSet('wisselend',WISSELEND);}
+function saveWisselendEntry(dayKey){try{localStorage.setItem('sylvie_wisselend',JSON.stringify(WISSELEND));}catch(e){} if(fbConnected&&fbDb){try{fbDb.ref(fbPath('wisselend/'+dayKey)).set(WISSELEND[dayKey]);}catch(e){console.error('Firebase wisselend-set fout:',e);}}}
+loadSavedWisselend();
+
+// Terugkerende (cyclische) klanten: komen niet elke week, maar volgens een interval t.o.v. een referentiedatum
+const DEFAULT_CYCLES = {
+  'Goldmeat':        { interval:2, anchorDate:'2026-05-14', mode:'aanwezig' },
+  'Limousin':        { interval:2, anchorDate:'2026-06-30', mode:'aanwezig' },
+  'Ecoclavis':       { interval:2, anchorDate:'2026-06-17', mode:'aanwezig' },
+  'Vleeswaren Duca': { interval:2, anchorDate:'2026-06-17', mode:'aanwezig' },
+  'Chicken Masters': { interval:2, anchorDate:'2026-05-20', mode:'aanwezig' },
+  'Luka':            { interval:3, anchorDate:'2026-05-22', mode:'afwezig' },
+};
+let CYCLES = JSON.parse(JSON.stringify(DEFAULT_CYCLES));
+function loadSavedCycles(){try{const s=localStorage.getItem('sylvie_cycles');if(s)CYCLES=Object.assign({},DEFAULT_CYCLES,JSON.parse(s));}catch(e){}}
+function saveCycles(){try{localStorage.setItem('sylvie_cycles',JSON.stringify(CYCLES));}catch(e){} fbSet('cycles',fbEncodeObjKeys(CYCLES));}
+function saveCyclesEntry(naam){try{localStorage.setItem('sylvie_cycles',JSON.stringify(CYCLES));}catch(e){} fbSetEntry('cycles',naam,CYCLES[naam]);}
+loadSavedCycles();
+
+// Bepaalt of een cyclische klant op een gegeven datum aanwezig is. Geeft null terug als er geen patroon is ingesteld.
+function isCyclePresent(naam, dateStr){
+  const c = CYCLES[naam];
+  if(!c || !c.anchorDate || !c.interval) return null;
+  const wk = weekNr(new Date(dateStr+'T12:00:00'));
+  const anchorWk = weekNr(new Date(c.anchorDate+'T12:00:00'));
+  const diff = ((wk - anchorWk) % c.interval + c.interval) % c.interval;
+  const onAnchor = diff === 0;
+  return c.mode === 'afwezig' ? !onAnchor : onAnchor;
+}
 
 function weekNr(d){const dt=new Date(d);dt.setHours(0,0,0,0);dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);const w1=new Date(dt.getFullYear(),0,4);return 1+Math.round(((dt-w1)/86400000-3+(w1.getDay()+6)%7)/7);}
 function dagNaam(d){return['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'][d.getDay()];}
@@ -519,32 +803,16 @@ function getRoute(dateStr){
   // baseKlanten op basis van rk (correct route key incl even/oneven)
   let baseKlanten = (ROUTES[rk]||[]).map(n=>({n,...getInfo(n)}));
 
-  // Goldmeat donderdag: om de 2 weken (anker: week 20 = 14 mei = aanwezig)
-  const goldmeatAan = (wk - 20) % 2 === 0;
-  if((key==='donderdag') && !goldmeatAan){
-    baseKlanten = baseKlanten.filter(k=>k.n!=='Goldmeat');
-  }
+  // Cyclische (niet-wekelijkse) klanten: Goldmeat, Limousin, Ecoclavis, Vleeswaren Duca, Chicken Masters
+  ['Goldmeat','Limousin','Ecoclavis','Vleeswaren Duca','Chicken Masters'].forEach(naam=>{
+    const present = isCyclePresent(naam, dateStr);
+    if(present === false){
+      baseKlanten = baseKlanten.filter(k=>k.n!==naam);
+    }
+  });
 
-  // Limousin dinsdag: om de 2 weken (anker: week 27 = 30 juni = aanwezig)
-  const limousinAan = (wk - 27) % 2 === 0;
-  if(dag==='dinsdag' && !limousinAan){
-    baseKlanten = baseKlanten.filter(k=>k.n!=='Limousin');
-  }
-
-  // Ecoclavis en Vleeswaren Duca woensdag B: om de 2 weken (anker: week 25 = 17 juni = aanwezig)
-  const ducaAan = (wk - 25) % 2 === 0;
-  if(key==='woensdag_b' && !ducaAan){
-    baseKlanten = baseKlanten.filter(k=>k.n!=='Vleeswaren Duca' && k.n!=='Ecoclavis');
-  }
-
-  // Chicken Masters woensdag A: om de 2 weken (anker: week 21 = 20 mei = aanwezig)
-  const chickenAan = (wk - 21) % 2 === 0;
-  if(key==='woensdag_a' && !chickenAan){
-    baseKlanten = baseKlanten.filter(k=>k.n!=='Chicken Masters');
-  }
-
-  // Luka: 2 weken aan, 1 week af (anker: week 19 = aanwezig)
-  const lukaAan = (wk - 19) % 3 !== 2;
+  // Luka: cyclische klant die automatisch wordt toegevoegd aan de vrijdagroute wanneer aanwezig
+  const lukaAan = isCyclePresent('Luka', dateStr) !== false;
   if(dag==='vrijdag' && lukaAan){
     // Luka na Menken (positie 1, index 1)
     const menkenIdx = baseKlanten.findIndex(k=>k.n==='Menken');
@@ -552,6 +820,27 @@ function getRoute(dateStr){
     else baseKlanten.splice(2,0,{n:'Luka',...getInfo('Luka')});
   }
   return{dag,key,routeKey:rk,klanten:baseKlanten,wisselend:(WISSELEND[wk2]||[]).map(n=>({n,...getInfo(n)})),wk,even};
+}
+
+// Dinsdag met Limousin: na Limousin vaste volgorde door Veurne
+const LIMOUSIN_VOLGORDE=['Vlaemynck','Dierendonck','De Beauvoorder','Delvan','Schoenmaker laurens'];
+function applyLimousinOrder(){
+  if(!currentRouteKey||!currentRouteKey.startsWith('dinsdag'))return;
+  const limIdx=currentKlanten.findIndex(k=>k.n==='Limousin');
+  if(limIdx===-1||currentKlanten[limIdx].skipped)return;
+  const groepen={};
+  LIMOUSIN_VOLGORDE.forEach(n=>{const k=currentKlanten.find(x=>x.n===n);if(k)groepen[n]=[k];});
+  currentKlanten.forEach(k=>{
+    if(!k.extra||k.n==='Limousin')return;
+    const na=POSITIONS[k.n]&&POSITIONS[k.n][currentRouteKey];
+    if(na&&groepen[na]&&!LIMOUSIN_VOLGORDE.includes(k.n))groepen[na].push(k);
+  });
+  const blok=[];LIMOUSIN_VOLGORDE.forEach(n=>{if(groepen[n])blok.push(...groepen[n]);});
+  if(!blok.length)return;
+  const rest=currentKlanten.filter(k=>!blok.includes(k));
+  const li=rest.findIndex(k=>k.n==='Limousin');
+  rest.splice(li+1,0,...blok);
+  currentKlanten.length=0;currentKlanten.push(...rest);
 }
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -605,28 +894,25 @@ function addKlant(){
   const pos=parseInt(document.getElementById('mPos').value);
   if(!naam){alert('Geef een naam in');return;}
 
-  // Voeg toe aan huidige rit
+  // Adres/telefoon/notitie permanent opslaan in de centrale klantendatabank
+  DB[naam] = {a:adres, c:tels, nt:note};
+  saveDBEntry(naam);
+
+  // Positie onthouden voor de volgende keer (voordat we currentKlanten aanpassen)
+  const afterName = pos===0 ? null : currentKlanten[pos-1].n;
+  if(!POSITIONS[naam]) POSITIONS[naam] = {};
+  POSITIONS[naam][currentRouteKey] = afterName;
+  savePositionsEntry(naam);
+
+  // Klant toevoegen aan de wisselende-klantenlijst van deze dag/route, zodat hij de volgende keer als suggestie verschijnt
+  if(!WISSELEND[currentKey]) WISSELEND[currentKey] = [];
+  if(!WISSELEND[currentKey].includes(naam)) WISSELEND[currentKey].push(naam);
+  saveWisselendEntry(currentKey);
+  if(!currentWisselend.find(w=>w.n===naam)) currentWisselend.push({n:naam,...getInfo(naam)});
+
   currentKlanten.splice(pos,0,{n:naam,a:adres,c:tels,nt:note,extra:true});
-
-  // Sla op in DB zodat adres/tel bewaard blijft
-  if(!DB[naam]) DB[naam]={a:adres,c:tels,nt:note};
-  saveDB();
-
-  // Voeg automatisch toe aan wisselende lijst van deze dag
-  const dagKey = currentKey==='woensdag_a'?'woensdag_a':
-                 currentKey==='woensdag_b'||currentKey==='woensdag_b_even'||currentKey==='woensdag_b_oneven'?'woensdag_b':
-                 currentKey;
-  if(!WISSELEND[dagKey]) WISSELEND[dagKey]=[];
-  if(!WISSELEND[dagKey].includes(naam)){
-    WISSELEND[dagKey].push(naam);
-    // Sla wisselend op in Firebase
-    fbSet('wisselend', WISSELEND);
-    console.log(naam+' toegevoegd aan wisselende lijst van '+dagKey);
-  }
-
-  saveHistoriek();
-  closeModal('modalAdd');
-  renderList();
+  applyLimousinOrder();
+  saveHistoriek();closeModal('modalAdd');renderList();
 }
 
 function removeExtra(idx){currentKlanten.splice(idx,1);saveHistoriek();renderList();}
@@ -655,10 +941,80 @@ function saveEdit(){
   if(!naam){alert('Naam mag niet leeg zijn');return;}
   const orig=currentKlanten[editIndex].n;
   DB[orig]={a:adres,c:tels,nt:note};
-  if(naam!==orig)DB[naam]={a:adres,c:tels,nt:note};
-  saveDB();
+  saveDBEntry(orig);
+  if(naam!==orig){DB[naam]={a:adres,c:tels,nt:note};saveDBEntry(naam);}
   currentKlanten[editIndex]={...currentKlanten[editIndex],n:naam,a:adres,c:tels,nt:note};
   saveHistoriek();closeModal('modalEdit');renderList();
+}
+
+let wisselEditNaam = '';
+function toggleCycleFields(){
+  const mode = document.getElementById('wCycleMode').value;
+  document.getElementById('wCycleFields').style.display = mode ? 'block' : 'none';
+}
+function openWisselEditModal(naam){
+  wisselEditNaam = naam;
+  const info = getInfo(naam);
+  document.getElementById('wNaamDisplay').textContent = naam;
+  document.getElementById('wAdres').value = info.a||'';
+  document.getElementById('wNote').value = info.nt||'';
+  document.getElementById('wTelList').innerHTML='';
+  if(info.c&&info.c.length>0) info.c.forEach(t=>addTelField('wTelList',t));
+  else addTelField('wTelList');
+
+  // Positie-dropdown opbouwen op basis van de stops van de dag die nu open staat
+  const sel=document.getElementById('wPos');
+  sel.innerHTML='<option value="0">⬆️ Als eerste stop</option>';
+  currentKlanten.forEach((k,i)=>{
+    const o=document.createElement('option');
+    o.value=i+1;
+    o.textContent='Na stop '+(i+1)+': '+k.n;
+    sel.appendChild(o);
+  });
+  const sp = getSuggestedPos(naam, currentRouteKey, currentKlanten);
+  sel.value = sp!==null ? sp : currentKlanten.length;
+
+  // Terugkerend patroon vooraf invullen indien ingesteld
+  const cyc = CYCLES[naam];
+  document.getElementById('wCycleMode').value = cyc ? cyc.mode : '';
+  document.getElementById('wInterval').value = cyc ? String(cyc.interval) : '2';
+  document.getElementById('wAnchorDate').value = cyc ? cyc.anchorDate : '';
+  toggleCycleFields();
+
+  document.getElementById('modalWisselEdit').classList.add('open');
+}
+
+function saveWisselEdit(){
+  const adres=document.getElementById('wAdres').value.trim();
+  const note=document.getElementById('wNote').value.trim();
+  const tels=getTels('wTelList');
+  const pos=parseInt(document.getElementById('wPos').value);
+
+  // Adres/telefoon/notitie bijwerken in de centrale klantendatabank
+  DB[wisselEditNaam] = {a:adres, c:tels, nt:note};
+  saveDBEntry(wisselEditNaam);
+
+  // Positie bijwerken voor de huidige route/dag
+  const afterName = pos===0 ? null : currentKlanten[pos-1].n;
+  if(!POSITIONS[wisselEditNaam]) POSITIONS[wisselEditNaam] = {};
+  POSITIONS[wisselEditNaam][currentRouteKey] = afterName;
+  savePositionsEntry(wisselEditNaam);
+
+  // Terugkerend patroon bijwerken
+  const cycleMode = document.getElementById('wCycleMode').value;
+  if(cycleMode){
+    const interval = parseInt(document.getElementById('wInterval').value);
+    const anchorDate = document.getElementById('wAnchorDate').value;
+    if(anchorDate){
+      CYCLES[wisselEditNaam] = { interval, anchorDate, mode: cycleMode };
+    }
+  } else {
+    delete CYCLES[wisselEditNaam];
+  }
+  saveCyclesEntry(wisselEditNaam);
+
+  closeModal('modalWisselEdit');
+  renderList();
 }
 
 function skipKlant(idx){
@@ -724,6 +1080,7 @@ function cardHTML(k,i,isDepot){
       <button class="move-btn" onclick="moveKlant(${i},-1)" ${i===0?'disabled style="opacity:0.3"':''}>&#8679;</button>
       <button class="move-btn" onclick="moveKlant(${i},1)" ${i===currentKlanten.length-1?'disabled style="opacity:0.3"':''}>&#8681;</button>
       <button class="note-btn" onclick="openNoteModal(${i})">📝 Notitie</button>
+      <button class="edit-btn" onclick="openEditModal(${i})">✏️ Wijzig</button>
       <button class="skip-btn" onclick="skipKlant(${i})">${skipTxt}</button>
       ${k.extra&&!k.skipped?`<button class="del-btn" onclick="removeExtra(${i})">✕ Eenmalig verwijderen</button>`:''}
       ${k.actief?`<button class="del-btn" style="border-color:#ff9500;color:#ff9500" onclick="toggleActief('${k.n}','${currentKey}','${currentKey}')">🔕 Deactiveer</button>`:''}
@@ -748,11 +1105,10 @@ function renderList(){
     <button class="btn green" onclick="doPrint()">🖨️ Afdrukken</button>
     <button class="btn hist no-print" onclick="openHistoriek()">📋 Historiek</button>
     <button class="btn export no-print" onclick="exportHistoriek()">💾 Excel</button>
-    <button class="btn no-print" id="syncBtn" style="background:#5856d6;border-color:#5856d6;color:#fff" onclick="openSyncModal()">🔗 Sync</button>
+    <button class="btn reset no-print" onclick="resetFirebase()">🔄 Reset Firebase</button>
   </div>
   ${woensdagTabs}
   <div class="countbadge">${currentKlanten.length} stops${extra}${badge}</div>
-  <div id="prepBadge" style="display:none;font-size:11px;color:#ff9500;padding:2px 1rem">📋 Voorbereide agenda — wijzigingen worden onthouden</div>
   <div id="cardList">
   ${cardHTML(DEPOT,0,true)}
   </div>`;
@@ -773,11 +1129,18 @@ function renderList(){
         const beforeName = sp<currentKlanten.length?'stop '+(sp+1)+': '+currentKlanten[Math.min(sp,currentKlanten.length-1)].n:'einde van de rit';
         posLabel=`<span class="pos-label">→ Na ${afterName} — Voor ${beforeName}</span>`;
       }
+      const dateStr = document.getElementById('di').value;
+      const cyclePresent = dateStr ? isCyclePresent(k.n, dateStr) : null;
+      let cycleBadge = '';
+      if(cyclePresent === true) cycleBadge = '<div style="font-size:11px;color:#34c759;font-weight:600;margin-top:2px">🔁 Normaal aanwezig deze week</div>';
+      else if(cyclePresent === false) cycleBadge = '<div style="font-size:11px;color:#999;font-weight:600;margin-top:2px">😴 Normaal afwezig deze week</div>';
       html+=`<div class="card no-print" style="opacity:0.75;border-style:dashed;margin:0.4rem 1rem">
         <div class="cheader"><span class="num" style="border-style:dashed">?</span><span class="cname">${k.n}</span>${posLabel}</div>
+        ${cycleBadge}
         ${k.a?`<div class="caddr">📍 ${k.a}</div>`:''}
         ${(k.c||[]).map(c=>`<div class="ccontact">📞 ${c}</div>`).join('')}
         <div class="card-actions">          <button class="btn primary" style="font-size:11px;padding:4px 10px" onclick="addFromWissel('${k.n.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">+ Eenmalig toevoegen</button>
+          <button class="edit-btn" style="font-size:11px;padding:4px 10px" onclick="openWisselEditModal('${k.n.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">✏️ Wijzig</button>
           <button class="btn" style="font-size:11px;padding:4px 10px;background:${actf?'#ff9500':'#f5f5f7'};border-color:${actf?'#ff9500':'#ccc'};color:${actf?'#fff':'#1d1d1f'}" onclick="toggleActief('${k.n.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${currentKey}','${currentKey}')">${actf?'🔔 Actief (klik om uit te zetten)':'🔕 Activeer voor elke week'}</button>
         </div>
       </div>`;
@@ -804,7 +1167,8 @@ function loadActieveKlanten(dag, key){
   const actieveVoorDag = actief[dagKey] || actief[dag] || [];
   actieveVoorDag.forEach(ak => {
     if(!currentKlanten.find(k=>k.n===ak.n)){
-      currentKlanten.push({...ak, extra:true, actief:true});
+      const fresh = getInfo(ak.n);
+      currentKlanten.push({...ak, a: fresh.a||ak.a||'', c: (fresh.c&&fresh.c.length?fresh.c:ak.c)||[], nt: fresh.nt||ak.nt||'', extra:true, actief:true});
     }
   });
 }
@@ -894,202 +1258,6 @@ function saveNote(){
   closeModal('modalNote');
   renderList();
 }
-
-
-
-function importeerPlanning(){
-  const code = prompt('Plak hier de code van uw collega:');
-  if(!code) return;
-  try {
-    const json = decodeURIComponent(escape(atob(code.trim())));
-    const data = JSON.parse(json);
-    
-    if(data.db){ DB = Object.assign({}, DEFAULT_DB, data.db); localStorage.setItem('sylvie_db', JSON.stringify(DB)); }
-    if(data.actief) localStorage.setItem('sylvie_actief', JSON.stringify(data.actief));
-    if(data.history){
-      const localH = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-      const merged = Object.assign({}, localH, data.history);
-      localStorage.setItem('sylvie_history', JSON.stringify(merged));
-    }
-    if(data.temp_notes) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data.temp_notes));
-    
-    alert('✅ Planning succesvol geïmporteerd!');
-    const dateStr = document.getElementById('di').value;
-    if(dateStr) render(dateStr);
-  } catch(e) {
-    alert('❌ Ongeldige code. Probeer opnieuw.');
-  }
-}
-
-// ===== GITHUB GIST SYNC =====
-let _histSaveTimeout = null;
-const GIST_API = 'https://api.github.com/gists';
-
-function getSyncToken(){ return localStorage.getItem('delmo_sync_token')||''; }
-function getGistId(){ return localStorage.getItem('delmo_gist_id')||''; }
-
-function openSyncModal(){
-  document.getElementById('syncToken').value = getSyncToken() ? '••••••••••••••••' : '';
-  document.getElementById('modalSync').classList.add('open');
-}
-
-function saveSyncToken(){
-  const token = document.getElementById('syncToken').value.trim();
-  if(!token || token.startsWith('•')){ closeModal('modalSync'); return; }
-  if(!token.startsWith('ghp_') && !token.startsWith('github_pat_')){
-    alert('Ongeldige token. Token begint met ghp_ of github_pat_');
-    return;
-  }
-  localStorage.setItem('delmo_sync_token', token);
-  const gistId = document.getElementById('syncGistId').value.trim();
-  if(gistId) localStorage.setItem('delmo_gist_id', gistId);
-  closeModal('modalSync');
-  updateSyncBtn('verbinding maken...');
-  initGistSync();
-}
-
-function updateSyncBtn(status){
-  const btn = document.getElementById('syncBtn');
-  if(!btn) return;
-  if(status === 'ok'){
-    btn.textContent = '🟢 Sync';
-    btn.style.background = '#34c759';
-    btn.style.borderColor = '#34c759';
-  } else if(status === 'fout'){
-    btn.textContent = '🔴 Sync';
-    btn.style.background = '#ff3b30';
-    btn.style.borderColor = '#ff3b30';
-  } else {
-    btn.textContent = '🟡 ' + status;
-    btn.style.background = '#ff9500';
-    btn.style.borderColor = '#ff9500';
-  }
-}
-
-function gistHeaders(){
-  return {
-    'Authorization': 'token ' + getSyncToken(),
-    'Content-Type': 'application/json',
-    'Accept': 'application/vnd.github.v3+json'
-  };
-}
-
-function buildGistData(){
-  return {
-    db: DB,
-    actief: JSON.parse(localStorage.getItem('sylvie_actief')||'{}'),
-    history: JSON.parse(localStorage.getItem('sylvie_history')||'{}'),
-    temp_notes: JSON.parse(localStorage.getItem('sylvie_temp_notes')||'{}'),
-    wisselend_extra: JSON.parse(localStorage.getItem('sylvie_wisselend')||'{}'),
-    updated: new Date().toISOString()
-  };
-}
-
-function initGistSync(){
-  const token = getSyncToken();
-  if(!token) return;
-  
-  const gistId = getGistId();
-  if(gistId){
-    // Laad bestaande gist
-    loadFromGist();
-  } else {
-    // Maak nieuwe gist aan
-    createGist();
-  }
-}
-
-function createGist(){
-  const data = buildGistData();
-  fetch(GIST_API, {
-    method: 'POST',
-    headers: gistHeaders(),
-    body: JSON.stringify({
-      description: 'Delmo Planning Sync',
-      public: false,
-      files: { 'delmo_planning.json': { content: JSON.stringify(data, null, 2) } }
-    })
-  })
-  .then(r => r.json())
-  .then(gist => {
-    if(gist.id){
-      localStorage.setItem('delmo_gist_id', gist.id);
-      updateSyncBtn('ok');
-      alert('✅ Synchronisatie geactiveerd!\n\nGeef deze code aan uw collega\'s zodat zij ook kunnen synchroniseren:\n\n' + gist.id + '\n\nZij kunnen dit invullen via de 🔗 Sync knop.');
-      startSyncPolling();
-    } else {
-      updateSyncBtn('fout');
-      alert('❌ Fout bij aanmaken: ' + JSON.stringify(gist.message));
-    }
-  })
-  .catch(e => { updateSyncBtn('fout'); console.error(e); });
-}
-
-function saveToGist(){
-  const token = getSyncToken();
-  const gistId = getGistId();
-  if(!token || !gistId) return;
-  
-  const data = buildGistData();
-  fetch(GIST_API + '/' + gistId, {
-    method: 'PATCH',
-    headers: gistHeaders(),
-    body: JSON.stringify({
-      files: { 'delmo_planning.json': { content: JSON.stringify(data, null, 2) } }
-    })
-  })
-  .then(r => { if(r.ok) updateSyncBtn('ok'); else updateSyncBtn('fout'); })
-  .catch(() => updateSyncBtn('fout'));
-}
-
-function loadFromGist(){
-  const token = getSyncToken();
-  const gistId = getGistId();
-  if(!token || !gistId) return;
-  
-  fetch(GIST_API + '/' + gistId, { headers: gistHeaders() })
-  .then(r => r.json())
-  .then(gist => {
-    if(!gist.files || !gist.files['delmo_planning.json']){
-      updateSyncBtn('fout'); return;
-    }
-    const data = JSON.parse(gist.files['delmo_planning.json'].content);
-    // Merge data
-    if(data.db) DB = Object.assign({}, DEFAULT_DB, data.db);
-    if(data.actief) localStorage.setItem('sylvie_actief', JSON.stringify(data.actief));
-    if(data.temp_notes) localStorage.setItem('sylvie_temp_notes', JSON.stringify(data.temp_notes));
-    if(data.history){
-      const local = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-      const merged = Object.assign({}, data.history, local);
-      localStorage.setItem('sylvie_history', JSON.stringify(merged));
-    }
-    updateSyncBtn('ok');
-    const dateStr = document.getElementById('di').value;
-    if(dateStr) render(dateStr);
-    startSyncPolling();
-  })
-  .catch(e => { updateSyncBtn('fout'); console.error(e); });
-}
-
-let _syncPollInterval = null;
-function startSyncPolling(){
-  if(_syncPollInterval) clearInterval(_syncPollInterval);
-  // Poll elke 60 seconden
-  _syncPollInterval = setInterval(loadFromGist, 60000);
-}
-
-function fbSaveHistory(){
-  clearTimeout(_histSaveTimeout);
-  _histSaveTimeout = setTimeout(() => {
-    try {
-      const h = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
-      saveToGist();
-    } catch(e){}
-  }, 2000);
-}
-
-function fbSaveTempNotes(){ saveToGist(); }
-function fbSet(path, data){ saveToGist(); }
 
 function saveHistoriek(){
   if(!currentKlanten.length) return;
@@ -1262,6 +1430,7 @@ function render(dateStr){
   currentKlanten=[...r.klanten];currentWisselend=[...r.wisselend];currentKey=r.key;currentRouteKey=r.routeKey;
 
   // Herstel opgeslagen wijzigingen voor deze datum
+  let savedOrderRestored = false;
   try {
     const history = JSON.parse(localStorage.getItem('sylvie_history')||'{}');
     const histKey = dateStr + (r.key ? '_' + r.key : '');
@@ -1274,14 +1443,16 @@ function render(dateStr){
           if(idx !== -1) currentKlanten[idx].skipped = true;
         }
       });
-      // Herstel extra toegevoegde klanten
+      // Herstel extra toegevoegde klanten (adres/telefoon/notitie wél vers uit de actuele databank halen,
+      // zodat latere adreswijzigingen ook zichtbaar worden op dagen die al eerder werden opgebouwd)
       const extraKlanten = saved.klanten.filter(k=>k.extra&&!k.skipped);
       extraKlanten.forEach(ek => {
         if(!currentKlanten.find(k=>k.n===ek.n)){
-          currentKlanten.push({...ek, extra:true});
+          const fresh = getInfo(ek.n);
+          currentKlanten.push({...ek, a: fresh.a||ek.a||'', c: (fresh.c&&fresh.c.length?fresh.c:ek.c)||[], nt: fresh.nt||ek.nt||'', extra:true});
         }
       });
-      // Herstel volgorde zoals opgeslagen
+      // Herstel volgorde zoals opgeslagen (inclusief manuele verplaatsingen)
       if(saved.klanten.length > 0){
         const savedOrder = saved.klanten.map(k=>k.n);
         currentKlanten.sort((a,b)=>{
@@ -1292,9 +1463,16 @@ function render(dateStr){
           if(ib===-1)return -1;
           return ia-ib;
         });
+        savedOrderRestored = true;
       }
     }
   } catch(e){ console.error('Herstel fout:', e); }
+  if(!savedOrderRestored) applyLimousinOrder();
+  // Vrijdag: Straetmans altijd na Vlevico/colruyt
+  if(r.dag==='vrijdag'){
+    const si=currentKlanten.findIndex(k=>k.n==='Straetmans'), ci=currentKlanten.findIndex(k=>k.n==='Vlevico/colruyt');
+    if(si!==-1&&ci!==-1&&si<ci){const [st]=currentKlanten.splice(si,1);currentKlanten.splice(ci,0,st);}
+  }
 
   // Laad tijdelijke notities voor deze datum
   try {
@@ -1310,15 +1488,15 @@ function render(dateStr){
   loadActieveKlanten(r.dag, r.key);
 
   saveHistoriek();
-  // Toon voorbereiding indicator voor toekomstige datums
-  try {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const selected = new Date(dateStr+'T00:00:00');
-    const prepBadge = document.getElementById('prepBadge');
-    if(prepBadge) prepBadge.style.display = selected > today ? 'block' : 'none';
-  } catch(e){}
   renderList();
 }
+
+const di=document.getElementById('di');
+const td=new Date();
+di.value=td.getFullYear()+'-'+String(td.getMonth()+1).padStart(2,'0')+'-'+String(td.getDate()).padStart(2,'0');
+di.addEventListener('change',()=>render(di.value));
+render(di.value);
+
 
 const di=document.getElementById('di');
 const td=new Date();
